@@ -16,4 +16,4 @@ def generate_qr(container_code: str, overwrite: bool = False) -> str:
         img = qrcode.make(url)
         img.save(qr_file)
 
-    return qr_filesss
+    return qr_file
