@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, Boolean, Integer, String, Date, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import relationship
 from .db import Base
 from datetime import datetime
 import enum
+
 
 class Container(Base):
     __tablename__ = "containers"
@@ -20,18 +21,24 @@ class Component(Base):
 
     name = Column(String, nullable=False)
     category = Column(String, nullable=False)
-    quantity = Column(Integer, nullable=False)
+
+    container_id = Column(Integer, ForeignKey("containers.id"), nullable=False)
+
+    quantity = Column(Integer, nullable=False)  
+    # Current available quantity (changes with borrow/return)
+
     remarks = Column(String, nullable=True)
 
     image_path = Column(String, nullable=False)
 
-    container_id = Column(
-        Integer,
-        ForeignKey("containers.id"),
-        nullable=False
-    )
+    # --- Lifecycle flags ---
+    is_deleted = Column(Boolean, default=False)
+    deleted_reason = Column(String, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
 
-    container = relationship("Container", backref="components")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
     #Borrower 
 class Borrower(Base):
