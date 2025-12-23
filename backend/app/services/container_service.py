@@ -11,6 +11,7 @@ def generate_qr(container_code: str, overwrite: bool = False) -> str:
     base_url = get_base_url()
     url = f"{base_url}/containers/{container_code}/components"
     qr_file = f"{BASE_QR_DIR}/{container_code}.png"
+    print({qr_file})
 
     if overwrite or not os.path.exists(qr_file):
         img = qrcode.make(url)

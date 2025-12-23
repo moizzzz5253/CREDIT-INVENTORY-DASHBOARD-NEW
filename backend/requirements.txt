@@ -1,11 +1,44 @@
+# -------------------------------
+# Core Backend
+# -------------------------------
 fastapi
 uvicorn[standard]
 sqlalchemy
+alembic
+
+# -------------------------------
+# Validation & Settings
+# -------------------------------
 pydantic
 pydantic-settings
+python-dateutil
+
+# -------------------------------
+# File Uploads & Images
+# -------------------------------
 python-multipart
+pillow
+
+# -------------------------------
+# QR Code Generation
+# -------------------------------
+qrcode[pil]
+
+# -------------------------------
+# Excel / CSV Handling
+# -------------------------------
+pandas
+openpyxl
+xlsxwriter
+
+# -------------------------------
+# Authentication & Security (future ready)
+# -------------------------------
 passlib[bcrypt]
 python-jose[cryptography]
-qrcode[pil]
-pillow
-python-dateutil
+
+# -------------------------------
+# Utilities
+# -------------------------------
+python-dotenv
+loguru

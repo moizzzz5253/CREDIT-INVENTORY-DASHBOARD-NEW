@@ -1,17 +1,29 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.db
 *.sqlite3
-.env
-
-# Virtual environments
 venv/
-venv2/
+env/
 
-# Node
+# Node / React
 node_modules/
 dist/
+.vite/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Env files
+.env
+.env.*

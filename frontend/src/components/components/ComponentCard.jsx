@@ -8,7 +8,7 @@ export default function ComponentCard({ component }) {
       />
 
       <h4 className="font-semibold">{component.name}</h4>
-      <p className="text-sm text-zinc-400">{component.category}</p>
+      <p className="text-sm text-zinc-450">{component.category}</p>
 
       <div className="mt-2 text-sm">
         Quantity: <span className="font-medium">{component.quantity}</span>

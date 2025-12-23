@@ -1,58 +1,61 @@
-#FastAPI
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-#database
-from app.database.db import engine
-from app.database import models
+from app.database.db import Base, engine
+from app.routers import (
+    component,
+    container,
+    borrow,
+    returns,
+    history,
+    history_deleted,
+    reports,
+    import_component
+)
 
-#CORS
-from fastapi.middleware.cors import CORSMiddleware
+# -----------------------------
+# Database initialization
+# -----------------------------
+Base.metadata.create_all(bind=engine)
 
-#Routers
-from app.routers import container
-from app.routers import component
-from app.routers import borrow, returns
-
-
-# Create DB tables
-models.Base.metadata.create_all(bind=engine)
-
+# -----------------------------
+# App initialization
+# -----------------------------
 app = FastAPI(
-    title="Lab Inventory Dashboard API",
+    title="CREDIT Inventory Management System",
     version="1.0.0"
 )
-# CORS configuration
+app.mount("/qr_codes", StaticFiles(directory="qr_codes"), name="qr_codes")
+# -----------------------------
+# CORS (frontend support)
+# -----------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://10.101.117.186:5173"
-       
-    ],
+    allow_origins=["*"],  # tighten later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# -----------------------------
 # Routers
-
-app.mount(
-    "/uploads",
-    StaticFiles(directory="uploads"),
-    name="uploads"
-)
-
-app.mount(
-    "/qr_codes",
-    StaticFiles(directory="qr_codes"),
-    name="qr_codes"
-)
-
-#Routers Include
-app.include_router(container.router)
+# -----------------------------
 app.include_router(component.router)
+app.include_router(container.router)
 app.include_router(borrow.router)
 app.include_router(returns.router)
+app.include_router(history.router)
+app.include_router(history_deleted.router)
+app.include_router(import_component.router)
+app.include_router(reports.router)
 
 
+# -----------------------------app.include_router(reports.router)
+# Health check
+# -----------------------------
+
+
+@app.get("/")
+def root():
+    return {"status": "CREDIT backend running"}

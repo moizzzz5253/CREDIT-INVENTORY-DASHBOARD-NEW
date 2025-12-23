@@ -1,0 +1,58 @@
+Let's proceed with frontend. So restructure the frontend using tools such as tailwind, vite, react. Provide all the packages needed to install.
+
+The dashboard shall consist of 
+The frontend should look futuristic, When the web loads, it should show dashboard page. the title of the page is CREDIT Inventory System. This page should show Information in form of cards. There should be 3 cards, Global quantities in the lab, Number of components being borrowed, clock and today's date.
+
+Sidebars at the side, Sidebars should contain Dashboard, Components, Borrow, Return, History.
+
+The sidebar should contain dropdowns
+Dashboard should display as described when clicked -  no dropdown
+
+Container - Upon clicking it,
+
+Searchbar at top = Search container by Label or cabinet num.
+
+>At the top, there should be buttons for Initializing containers if container_init = False, else no need to show, Regenerate QR codes  in case IP changes, Print QR codes. For printing will be described below
+
+>show all the containers in form of box, with QR codes and container label below it. when clicking a specific container, it lists all the components, boxes and partitions inside that container.
+
+ -Boxes
+ >Display all boxes inside the container, and when clicking a box, it lists out all the components in the box. 
+ 
+ -Partition - 
+ >Display a layout of partition as if a grid with components sitting on each grid. 
+
+ -Components - Those components that aren't in box nor partition, will be displayed normally upon clicking container label.
+
+The components will be displayed just as a component card described below but won't have any options to delete, mod or borrow.
+ 
+
+Components 
+
+At the top, searchbar = Search by Component's name , filter by categories
+
+- Add components = for adding components, 
+
+- Manage components = this page should show all the components in the form of cards, The card should contain component's image, name, category, qty total, qty borrowed. There should be option for Modify component, Delete component, Borrow component and View in Container upon clicking the card.
+
+Borrow - upon clicking it,
+
+Pages 
+ >Borrow (View in components)
+ >Active Borrower list
+
+Borrow
+
+The borrow form format:
+ Name of component
+ Qty
+ Reason
+ Expected return date
+ Name of borrower
+ TP ID
+ Phone number
+ PIC
+ Option to add more components - When clicked
+
+
+How this page should work - In manage component, there is an option for borrowing a component when click the component card. When clicking borrow component, it should open this form and automatically fill the name of component
