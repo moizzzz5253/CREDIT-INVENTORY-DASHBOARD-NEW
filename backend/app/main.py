@@ -13,6 +13,7 @@ from app.routers import (
     reports,
     import_component
 )
+from app.routers import constants_router
 
 # -----------------------------
 # Database initialization
@@ -27,6 +28,7 @@ app = FastAPI(
     version="1.0.0"
 )
 app.mount("/qr_codes", StaticFiles(directory="qr_codes"), name="qr_codes")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # -----------------------------
 # CORS (frontend support)
 # -----------------------------
@@ -49,6 +51,7 @@ app.include_router(history.router)
 app.include_router(history_deleted.router)
 app.include_router(import_component.router)
 app.include_router(reports.router)
+app.include_router(constants_router.router)
 
 
 # -----------------------------app.include_router(reports.router)

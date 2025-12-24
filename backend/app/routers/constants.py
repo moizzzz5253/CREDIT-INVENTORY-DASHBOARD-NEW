@@ -15,5 +15,6 @@ CATEGORIES = [
     "Electronic Components",
     "Measuring Instruments",
     "Stationery",
+    "Sensors and tranducers",
     "3D Printing Tools",
 ]

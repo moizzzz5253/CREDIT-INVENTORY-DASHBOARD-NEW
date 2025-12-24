@@ -1,17 +1,36 @@
-import {useEffect} from "react";
+import {useEffect, useState} from "react";
 import DashboardLayout from "../layouts/DashboardLayout";
 import Clock from "../components/dashboard/Clock";
 import StatCard from "../components/dashboard/StatCard";
+import { getDashboardStats } from "../api/dashboard.api";
 
 export default function Dashboard() {
-  // Mock values for now
-  const totalComponents = 1;
-  const borrowedCount = 0;
-  const overdueCount = 1;
+  const [stats, setStats] = useState({
+    total_components: 0,
+    currently_borrowed: 0,
+    overdue_borrows: 0
+  });
+  const [loading, setLoading] = useState(true);
     
   useEffect(() => {
     document.title = "Dashboard | CREDIT Inventory Management System";
+    loadStats();
   }, []);
+
+  const loadStats = async () => {
+    try {
+      const data = await getDashboardStats();
+      setStats(data);
+    } catch (error) {
+      console.error("Failed to load dashboard stats:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const overdueDisplay = stats.overdue_borrows === 0 
+    ? { value: "No overdue", variant: "success" }
+    : { value: stats.overdue_borrows, variant: "danger" };
 
   return (
     <DashboardLayout>
@@ -25,16 +44,16 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <StatCard
             title="Total Components in Inventory"
-            value={totalComponents}
+            value={loading ? "..." : stats.total_components}
           />
           <StatCard
             title="Currently Borrowed Components"
-            value={borrowedCount}
+            value={loading ? "..." : stats.currently_borrowed}
           />
           <StatCard
             title="Overdue Borrows"
-            value={overdueCount}
-            variant="danger"
+            value={overdueDisplay.value}
+            variant={overdueDisplay.variant}
           />
         </div>
       </div>

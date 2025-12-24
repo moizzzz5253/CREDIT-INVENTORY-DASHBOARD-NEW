@@ -14,3 +14,8 @@ export const regenerateQRCodes = async () => {
   const res = await api.post("/containers/regenerate-qr");
   return res.data;
 };
+
+export const getComponentsInContainer = async (containerCode) => {
+  const res = await api.get(`/containers/${containerCode}/components`);
+  return res.data;
+};

@@ -38,7 +38,7 @@ def create_component(
     location_index: int | None = Form(None),
 
     remarks: str | None = Form(None),
-    image: UploadFile = File(...),
+    image: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     # ---------------------------
@@ -70,13 +70,17 @@ def create_component(
         resolved_location_index = location_index
     
     # ---------------------------
-    # Save image
+    # Save image (optional)
     # ---------------------------
-    filename = f"{name.replace(' ', '_')}_{image.filename}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    if image is None:
+        # Use placeholder image path (ensure this file exists at uploads/components/placeholder.svg)
+        file_path = os.path.join(UPLOAD_DIR, "placeholder.svg")
+    else:
+        filename = f"{name.replace(' ', '_')}_{image.filename}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
 
-    with open(file_path, "wb") as f:
-        f.write(image.file.read())
+        with open(file_path, "wb") as f:
+            f.write(image.file.read())
 
     # ---------------------------
     # Create component

@@ -93,7 +93,7 @@ export default function Clock({ size = 260 }) {
       </div>
 
       {/* Date */}
-      <div className="text-lg text-zinc-400">
+      <div className="text-2xl text-zinc-300 font-semibold">
         {time.toLocaleDateString(undefined, {
           weekday: "long",
           year: "numeric",
