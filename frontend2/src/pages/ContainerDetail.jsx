@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import DashboardLayout from "../layouts/DashboardLayout";
 import { getComponentsInContainer } from "../api/containers.api";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
@@ -62,15 +61,12 @@ export default function ContainerDetail() {
 
   if (loading) {
     return (
-      <DashboardLayout title={`Container ${code}`}>
-        <div className="text-center py-8">Loading components...</div>
-      </DashboardLayout>
+      <div className="text-center py-8">Loading components...</div>
     );
   }
 
   return (
-    <DashboardLayout title={`Container ${code}`}>
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* Back button */}
         <button
           onClick={() => navigate("/containers")}
@@ -153,7 +149,6 @@ export default function ContainerDetail() {
           </div>
         )}
       </div>
-    </DashboardLayout>
   );
 }
 

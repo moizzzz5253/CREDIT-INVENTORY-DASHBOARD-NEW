@@ -65,6 +65,7 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
 def get_active_borrows(db: Session = Depends(get_db)):
     today = date.today()
 
+    # Get all transactions that are not marked as COMPLETED
     transactions = (
         db.query(BorrowTransaction)
         .filter(BorrowTransaction.status != BorrowStatus.COMPLETED)
@@ -74,27 +75,38 @@ def get_active_borrows(db: Session = Depends(get_db)):
     results = []
 
     for tx in transactions:
-        status = (
-            "OVERDUE"
-            if today > tx.expected_return_date
-            else "ACTIVE"
-        )
+        # Calculate overdue status and days overdue based on expected return date
+        is_overdue = today > tx.expected_return_date
+        days_overdue = (today - tx.expected_return_date).days if is_overdue else 0
+        status = "OVERDUE" if is_overdue else "ACTIVE"
 
+        # Only process items that have remaining quantity > 0
+        # Skip items with deleted/missing components
         for item in tx.items:
-            remaining = item.quantity_borrowed - item.quantity_returned
-            if remaining <= 0:
+            # Skip if component is deleted or missing
+            if not item.component:
                 continue
-
-            results.append({
-                "borrower_name": tx.borrower.name,
-                "tp_id": tx.borrower.tp_id,
-                "phone": tx.borrower.phone,
-                "component_name": item.component.name,
-                "remaining_quantity": remaining,
-                "expected_return_date": tx.expected_return_date,
-                "borrowed_by_pic": tx.borrowed_by.name,
-                "status": status
-            })
+                
+            remaining = item.quantity_borrowed - item.quantity_returned
+            
+            # Only include items with remaining quantity > 0
+            # This ensures the borrower remains visible as long as ANY component has remaining quantity
+            if remaining > 0:
+                results.append({
+                    "transaction_id": tx.id,
+                    "component_id": item.component_id,
+                    "borrower_name": tx.borrower.name,
+                    "tp_id": tx.borrower.tp_id,
+                    "phone": tx.borrower.phone,
+                    "component_name": item.component.name,
+                    "remaining_quantity": remaining,
+                    "quantity_borrowed": item.quantity_borrowed,
+                    "expected_return_date": tx.expected_return_date.isoformat() if isinstance(tx.expected_return_date, date) else tx.expected_return_date,
+                    "borrowed_by_pic": tx.borrowed_by.name,
+                    "status": status,
+                    "is_overdue": is_overdue,
+                    "days_overdue": days_overdue
+                })
 
     return results
 

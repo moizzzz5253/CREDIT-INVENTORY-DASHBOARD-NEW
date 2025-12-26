@@ -11,7 +11,8 @@ from app.routers import (
     history,
     history_deleted,
     reports,
-    import_component
+    import_component,
+    database_manager
 )
 from app.routers import constants_router
 
@@ -51,6 +52,7 @@ app.include_router(history.router)
 app.include_router(history_deleted.router)
 app.include_router(import_component.router)
 app.include_router(reports.router)
+app.include_router(database_manager.router)
 app.include_router(constants_router.router)
 
 

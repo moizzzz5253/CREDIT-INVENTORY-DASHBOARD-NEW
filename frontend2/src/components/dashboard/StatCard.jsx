@@ -1,3 +1,5 @@
+import React from "react";
+
 export default function StatCard({ title, value, variant = "default" }) {
   const variants = {
     default: "bg-zinc-800 border-zinc-700",

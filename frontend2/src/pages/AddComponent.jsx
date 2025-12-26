@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import DashboardLayout from "../layouts/DashboardLayout";
+import React, { useEffect, useState } from "react";
 import { getAllContainers } from "../api/containers.api";
 import { getCategories, createComponent } from "../api/components.api";
 
@@ -65,8 +64,7 @@ export default function AddComponent() {
   };
 
   return (
-    <DashboardLayout title="Add Component">
-      <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-zinc-300">Name</label>
@@ -136,6 +134,5 @@ export default function AddComponent() {
           </div>
         )}
       </div>
-    </DashboardLayout>
   );
 }

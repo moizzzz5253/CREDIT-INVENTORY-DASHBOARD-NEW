@@ -6,12 +6,15 @@ __pycache__/
 *.db
 *.sqlite3
 venv/
+venv2/
 env/
+*.egg-info/
 
 # Node / React
 node_modules/
 dist/
 .vite/
+build/
 
 # OS
 .DS_Store
@@ -23,7 +26,30 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.cursor/
 
 # Env files
 .env
 .env.*
+
+# Database backups
+database_backups/
+**/database_backups/
+*.backup
+*.bak
+
+# Uploads and generated files
+uploads/
+qr_codes/
+**/uploads/
+**/qr_codes/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# Setup script temporary files
+start_backend.ps1
+start_frontend.ps1

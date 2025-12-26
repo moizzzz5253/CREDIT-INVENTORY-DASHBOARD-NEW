@@ -1,5 +1,111 @@
-import { useState, useEffect } from 'react';import { useNavigate } from 'react-router-dom';import { createBorrow } from '../api/borrow.api.js';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { createBorrow } from '../api/borrow.api.js';
 import { getAllComponents } from '../api/components.api.js';
+
+// Searchable Component Dropdown
+function SearchableComponentSelect({ components, value, onChange, required }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const dropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter components based on search term
+  const filteredComponents = (components || []).filter(comp => 
+    comp.name && comp.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Get selected component name
+  const selectedComponent = value 
+    ? components.find(c => c.id.toString() === value.toString())
+    : null;
+  const selectedName = selectedComponent ? selectedComponent.name : 'Select Component';
+
+  // Calculate available quantity
+  const getAvailableQuantity = (comp) => {
+    return (comp.quantity || 0) - (comp.borrowed_quantity || 0);
+  };
+
+  const handleSelect = (componentId) => {
+    onChange(componentId);
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  return (
+    <div ref={dropdownRef} className="relative flex-1">
+      {/* Dropdown Button/Input */}
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-2 bg-zinc-700 border border-zinc-600 rounded text-zinc-200 cursor-pointer flex justify-between items-center hover:border-zinc-500"
+      >
+        <span className={selectedComponent ? 'text-white' : 'text-zinc-400'}>
+          {selectedName}
+        </span>
+        <span className="text-zinc-400">▼</span>
+      </div>
+
+      {/* Dropdown Menu */}
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-zinc-700 border border-zinc-600 rounded shadow-lg max-h-60 overflow-hidden">
+          {/* Search Input */}
+          <div className="p-2 border-b border-zinc-600">
+            <input
+              type="text"
+              placeholder="Search components..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full p-2 bg-zinc-800 border border-zinc-600 rounded text-white placeholder-zinc-400 focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+          </div>
+
+          {/* Component List */}
+          <div className="max-h-48 overflow-y-auto">
+            {filteredComponents.length > 0 ? (
+              filteredComponents.map((comp) => {
+                const available = getAvailableQuantity(comp);
+                return (
+                  <div
+                    key={comp.id}
+                    onClick={() => handleSelect(comp.id)}
+                    className={`p-3 cursor-pointer hover:bg-zinc-600 border-b border-zinc-600 ${
+                      value && value.toString() === comp.id.toString() ? 'bg-zinc-600' : ''
+                    }`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-white font-medium">{comp.name}</span>
+                      <span className="text-zinc-400 text-sm ml-2">
+                        Available: {available}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="p-3 text-zinc-400 text-center">
+                No components found
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BorrowNew() {
   const [formData, setFormData] = useState({
@@ -149,22 +255,17 @@ export default function BorrowNew() {
           <h2 className="text-lg font-semibold mb-2">Items</h2>
           {formData.items.map((item, index) => (
             <div key={index} className="flex space-x-2 mb-2">
-              <select
+              <SearchableComponentSelect
+                components={components}
                 value={item.component_id}
-                onChange={(e) => handleItemChange(index, 'component_id', e.target.value)}
-                className="flex-1 p-2 bg-zinc-700 border border-zinc-600 rounded text-zinc-200"
+                onChange={(componentId) => handleItemChange(index, 'component_id', componentId)}
                 required
-              >
-                <option value="" className="bg-zinc-700">Select Component</option>
-                {components.map(comp => (
-                  <option key={comp.id} value={comp.id} className="bg-zinc-700">{comp.name}</option>
-                ))}
-              </select>
+              />
               <input
                 type="number"
                 min="1"
                 value={item.quantity}
-                onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value))}
+                onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
                 className="w-20 p-2 bg-zinc-700 border border-zinc-600 rounded text-zinc-200"
                 required
               />

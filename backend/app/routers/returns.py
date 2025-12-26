@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
-from app.database.models import BorrowItem, BorrowTransaction, ReturnEvent
+from app.database.models import BorrowItem, BorrowTransaction, ReturnEvent, BorrowStatus
 from app.utils.user_resolver import resolve_user
 
 router = APIRouter(prefix="/returns", tags=["Returns"])
@@ -24,7 +24,7 @@ def return_component(
         .filter(
             BorrowTransaction.id == transaction_id,
             BorrowItem.component_id == component_id,
-            BorrowTransaction.status == "ACTIVE"
+            BorrowTransaction.status != BorrowStatus.COMPLETED
         )
         .first()
     )
@@ -46,8 +46,15 @@ def return_component(
         returned_by_id=pic_user.id
     ))
 
-    if borrow_item.quantity_returned == borrow_item.quantity_borrowed:
-        borrow_item.transaction.status = "COMPLETED"
+    # Only mark transaction as COMPLETED when ALL items in the transaction are fully returned
+    transaction = borrow_item.transaction
+    all_items_returned = all(
+        item.quantity_returned >= item.quantity_borrowed
+        for item in transaction.items
+    )
+    
+    if all_items_returned:
+        transaction.status = BorrowStatus.COMPLETED
 
     db.commit()
 

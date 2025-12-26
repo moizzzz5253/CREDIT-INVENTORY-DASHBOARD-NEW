@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import DashboardLayout from "../layouts/DashboardLayout";
+import React, { useEffect, useState } from "react";
 import { getAllComponents, deleteComponent, updateComponent, getCategories } from "../api/components.api";
 import { getAllContainers } from "../api/containers.api";
 import ComponentCard from "../components/ComponentCard";
@@ -102,8 +101,7 @@ export default function ManageComponents() {
   };
 
   return (
-    <DashboardLayout title="Manage Components">
-      <div className="space-y-4">
+    <div className="space-y-4">
         <div className="flex gap-2 items-center">
           <input placeholder="Search by name..." value={query} onChange={(e) => setQuery(e.target.value)} className="flex-1 rounded bg-zinc-900 border border-zinc-700 p-2 text-white" />
           <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="rounded bg-zinc-900 border border-zinc-700 p-2 text-white">
@@ -199,6 +197,5 @@ export default function ManageComponents() {
           </div>
         </Modal>
       </div>
-    </DashboardLayout>
   );
 }

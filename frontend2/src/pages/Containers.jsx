@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import DashboardLayout from "../layouts/DashboardLayout";
+import React, { useEffect, useState } from "react";
 import {
   getAllContainers,
   initContainers,
@@ -8,6 +7,9 @@ import {
 import { useNavigate } from "react-router-dom";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000"; // backend base
+// #region agent log
+fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Containers.jsx:10',message:'API_BASE defined in Containers',data:{API_BASE,hasEnv:!!import.meta.env.VITE_API_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+// #endregion
 
 
 
@@ -18,10 +20,20 @@ export default function Containers() {
   const navigate = useNavigate();
 
   const loadContainers = async () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Containers.jsx:20',message:'loadContainers called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     setLoading(true);
     try {
       const data = await getAllContainers();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Containers.jsx:24',message:'getAllContainers success',data:{hasData:!!data,dataLength:Array.isArray(data)?data.length:'not-array'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       setContainers(data);
+    } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Containers.jsx:27',message:'getAllContainers error',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
     } finally {
       setLoading(false);
     }
@@ -68,10 +80,14 @@ export default function Containers() {
       printWindow.close();
     }, 1000);
   };
-  
 
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Containers.jsx:85',message:'Containers rendering',data:{containersCount:containers.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  }, [containers.length]);
+  // #endregion
   return (
-    <DashboardLayout title="Containers">
+    <>
       {/* Top controls */}
       <div className="flex flex-wrap gap-3 mb-6">
         <input
@@ -133,6 +149,6 @@ export default function Containers() {
           ))}
         </div>
       )}
-    </DashboardLayout>
+    </>
   );
 }

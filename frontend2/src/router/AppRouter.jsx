@@ -1,3 +1,4 @@
+import React, { useEffect } from "react";
 import { Routes, Route, Navigate, BrowserRouter } from "react-router-dom";
 import Dashboard from "../pages/Dashboard";
 import Containers from "../pages/Containers";
@@ -6,9 +7,21 @@ import ManageComponents from "../pages/ManageComponents";
 import AddComponent from "../pages/AddComponent";
 import BorrowNew from "../pages/BorrowNew";
 import BorrowActive from "../pages/BorrowActive";
+import History from "../pages/History";
+import SystemManager from "../pages/SystemManager";
 import DashboardLayout from "../layouts/DashboardLayout";
 
 export default function AppRouter() {
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppRouter.jsx:13',message:'AppRouter component mounted',data:{path:window.location.pathname,hasRoutes:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
+  }, []);
+  // #endregion
+  // #region agent log
+  try {
+    fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppRouter.jsx:17',message:'AppRouter returning JSX',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
+  } catch(e) {}
+  // #endregion
   return (
    <BrowserRouter>
     <DashboardLayout>
@@ -21,6 +34,8 @@ export default function AppRouter() {
         <Route path="/components/add" element={<AddComponent />} />
         <Route path="/borrow/new" element={<BorrowNew />} />
         <Route path="/borrow/active" element={<BorrowActive />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/system-manager" element={<SystemManager />} />
       </Routes>
     </DashboardLayout>
    </BrowserRouter>

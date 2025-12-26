@@ -1,6 +1,10 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+import os
+import uuid
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 import pandas as pd
+from datetime import datetime
 
 from app.database.db import get_db
 from app.database.models import Component, Container
@@ -11,12 +15,105 @@ router = APIRouter(
     tags=["Bulk Import"]
 )
 
+UPLOAD_DIR = "uploads/components"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-@router.post("/components")
-def import_components_from_excel(
+
+@router.get("/components/template")
+def download_import_template(db: Session = Depends(get_db)):
+    """Generate and download Excel template for component import"""
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.worksheet.datavalidation import DataValidation
+    
+    # Get container codes from database
+    containers = db.query(Container).order_by(Container.code).all()
+    container_codes = [c.code for c in containers] if containers else ['A1', 'B2', 'C3']  # Fallback examples
+    
+    # Create workbook and worksheet
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Components"
+    
+    # Set column headers
+    headers = ['name', 'category', 'quantity', 'container_code', 'location_type', 'location_index', 'remarks']
+    ws.append(headers)
+    
+    # Set column widths
+    column_widths = {
+        'A': 30,  # name
+        'B': 30,  # category
+        'C': 10,  # quantity
+        'D': 15,  # container_code
+        'E': 15,  # location_type
+        'F': 15,  # location_index
+        'G': 35   # remarks
+    }
+    for col, width in column_widths.items():
+        ws.column_dimensions[col].width = width
+    
+    # Add example data rows
+    ws.append(['Example Component 1', 'Microcontrollers', 5, container_codes[0] if container_codes else 'A1', 'BOX', 1, 'Sample remarks'])
+    ws.append(['Example Component 2', 'Sensors and tranducers', 10, container_codes[1] if len(container_codes) > 1 else 'B2', 'NONE', '', ''])
+    
+    # Data validation for category (Column B, starting from row 2)
+    category_validation = DataValidation(
+        type="list",
+        formula1=f'"{",".join(CATEGORIES)}"',
+        allow_blank=False
+    )
+    category_validation.add(f"B2:B1000")  # Apply to rows 2-1000
+    ws.add_data_validation(category_validation)
+    
+    # Data validation for container_code (Column D)
+    container_validation = DataValidation(
+        type="list",
+        formula1=f'"{",".join(container_codes)}"',
+        allow_blank=False
+    )
+    container_validation.add(f"D2:D1000")
+    ws.add_data_validation(container_validation)
+    
+    # Data validation for location_type (Column E)
+    location_type_validation = DataValidation(
+        type="list",
+        formula1='"NONE,BOX,PARTITION"',
+        allow_blank=False
+    )
+    location_type_validation.add(f"E2:E1000")
+    ws.add_data_validation(location_type_validation)
+    
+    # Data validation for location_index (Column F) - numbers 1-15
+    location_index_validation = DataValidation(
+        type="whole",
+        operator="between",
+        formula1=1,
+        formula2=15,
+        allow_blank=True
+    )
+    location_index_validation.add(f"F2:F1000")
+    ws.add_data_validation(location_index_validation)
+    
+    # Save to BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return StreamingResponse(
+        output,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={
+            'Content-Disposition': 'attachment; filename=component_import_template.xlsx'
+        }
+    )
+
+
+@router.post("/components/validate")
+def validate_excel_import(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
+    """Validate Excel file and return components to be imported (without committing)"""
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(400, "Only .xlsx files are supported")
 
@@ -32,7 +129,7 @@ def import_components_from_excel(
             f"Missing required columns: {required_columns}"
         )
 
-    inserted = 0
+    components_to_import = []
     errors = []
 
     for idx, row in df.iterrows():
@@ -76,22 +173,20 @@ def import_components_from_excel(
                 raise ValueError("Invalid location_type")
 
             if location_type != "NONE" and not location_index:
-                raise ValueError("location_index required")
+                raise ValueError("location_index required when location_type is not NONE")
 
-            component = Component(
-                name=name,
-                category=category,
-                quantity=quantity,
-                remarks=remarks,
-                image_path="uploads/components/placeholder.png",
-                container_id=container.id,
-                location_type=location_type,
-                location_index=location_index,
-                is_deleted=False
-            )
-
-            db.add(component)
-            inserted += 1
+            components_to_import.append({
+                "index": idx,  # Zero-based index for image mapping
+                "row_index": idx + 2,  # Excel row number (1-based + header)
+                "name": name,
+                "category": category,
+                "quantity": quantity,
+                "container_code": container_code,
+                "container_id": container.id,
+                "location_type": location_type,
+                "location_index": location_index,
+                "remarks": remarks
+            })
 
         except Exception as e:
             errors.append({
@@ -99,9 +194,86 @@ def import_components_from_excel(
                 "error": str(e)
             })
 
-    db.commit()
-
     return {
-        "inserted": inserted,
+        "components": components_to_import,
         "errors": errors
     }
+
+
+@router.post("/components/finalize")
+def finalize_component_import(
+    components_json: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Create components from validated data. Returns component IDs mapped to indices for image upload."""
+    import json
+    
+    try:
+        components = json.loads(components_json)
+        
+        created_components = []
+        placeholder_path = os.path.join(UPLOAD_DIR, "placeholder.svg")
+        
+        for comp_data in components:
+            # Create component with placeholder image initially
+            component = Component(
+                name=comp_data["name"],
+                category=comp_data["category"],
+                quantity=comp_data["quantity"],
+                remarks=comp_data.get("remarks"),
+                image_path=placeholder_path,
+                container_id=comp_data["container_id"],
+                location_type=comp_data["location_type"],
+                location_index=comp_data.get("location_index"),
+                is_deleted=False
+            )
+            
+            db.add(component)
+            db.flush()  # Get the ID without committing
+            
+            created_components.append({
+                "id": component.id,
+                "index": comp_data.get("index", len(created_components))  # Map back to original index
+            })
+        
+        db.commit()
+        
+        return {
+            "inserted": len(created_components),
+            "components": created_components,
+            "message": f"Successfully imported {len(created_components)} components"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(400, f"Error importing components: {str(e)}")
+
+
+@router.post("/components/upload-image")
+def upload_component_image(
+    component_id: int = Form(...),
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Upload image for a specific component"""
+    try:
+        component = db.query(Component).filter(Component.id == component_id).first()
+        if not component:
+            raise HTTPException(404, "Component not found")
+        
+        # Save image
+        filename = f"{uuid.uuid4().hex}_{image.filename}"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        with open(file_path, "wb") as f:
+            content = image.file.read()
+            f.write(content)
+        
+        # Update component image path
+        component.image_path = file_path
+        db.commit()
+        
+        return {"message": "Image uploaded successfully", "image_path": file_path}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(400, f"Error uploading image: {str(e)}")
