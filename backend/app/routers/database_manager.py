@@ -3,12 +3,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from io import BytesIO
 import shutil
-from datetime import datetime
+from datetime import datetime, date
 import os
 import pandas as pd
 
 from app.database.db import get_db, engine
-from app.database.models import Component, BorrowItem, Container, BorrowTransaction, Borrower
+from app.database.models import Component, BorrowItem, Container, BorrowTransaction, Borrower, BorrowStatus, User
+from app.utils.user_resolver import resolve_user
 from app.routers.constants import CATEGORIES
 
 router = APIRouter(
@@ -193,13 +194,14 @@ def restructure_from_excel(
     
     Key behavior:
     - Removes components marked as deleted (Is Deleted = True)
-    - Removes borrow items referencing deleted components
+    - Imports/updates borrowers and borrow transactions from Excel
+    - Updates borrow items (quantities borrowed/returned)
     - Keeps component IDs as they appear in Excel (NO reshuffling)
     - Validates all data before applying changes
     
     WARNING: This is a DESTRUCTIVE operation. See RISKS_AND_WARNINGS.md for details.
     
-    The Excel file must contain sheets: Components, Borrow Items
+    The Excel file must contain sheets: Components, Borrow Items, Borrow Transactions
     """
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(400, "Only .xlsx files are supported")
@@ -211,15 +213,19 @@ def restructure_from_excel(
         # Read Excel file
         df_components = pd.read_excel(file.file, sheet_name="Components")
         df_borrow_items = pd.read_excel(file.file, sheet_name="Borrow Items")
+        df_borrow_transactions = pd.read_excel(file.file, sheet_name="Borrow Transactions")
         
-        # Validate required columns
-        required_components_cols = ["ID", "Name", "Category", "Quantity", "Container Code", "Is Deleted"]
+        # Validate required columns - updated for new storage system
+        required_components_cols = ["ID", "Name", "Category", "Quantity", "Storage Type", "Is Deleted"]
         required_borrow_items_cols = ["ID", "Transaction ID", "Component ID", "Quantity Borrowed", "Quantity Returned"]
+        required_borrow_tx_cols = ["ID", "Borrower Name", "TP ID", "Phone", "Email", "PIC Name", "Reason", "Expected Return Date", "Status", "Borrowed At"]
         
         if not all(col in df_components.columns for col in required_components_cols):
             raise HTTPException(400, f"Missing required columns in Components sheet. Required: {required_components_cols}")
         if not all(col in df_borrow_items.columns for col in required_borrow_items_cols):
             raise HTTPException(400, f"Missing required columns in Borrow Items sheet. Required: {required_borrow_items_cols}")
+        if not all(col in df_borrow_transactions.columns for col in required_borrow_tx_cols):
+            raise HTTPException(400, f"Missing required columns in Borrow Transactions sheet. Required: {required_borrow_tx_cols}")
         
         # Validate and prepare data
         errors = []
@@ -257,26 +263,86 @@ def restructure_from_excel(
                     errors.append(f"Row {idx+2} (Components): Quantity cannot be negative")
                     continue
                 
-                container_code = str(row["Container Code"]).strip()
-                container = db.query(Container).filter(Container.code == container_code).first()
-                if not container:
-                    errors.append(f"Row {idx+2} (Components): Container '{container_code}' not found in database")
+                # Parse new storage system fields
+                storage_type = str(row.get("Storage Type", "CABINET")).strip().upper() if pd.notna(row.get("Storage Type")) else "CABINET"
+                if storage_type not in ["CABINET", "DRAWER", "STORAGE_BOX"]:
+                    errors.append(f"Row {idx+2} (Components): Invalid storage_type '{storage_type}'. Must be CABINET, DRAWER, or STORAGE_BOX")
                     continue
                 
+                # Storage-specific fields
+                cabinet_number = int(row["Cabinet Number"]) if pd.notna(row.get("Cabinet Number")) else None
+                shelf_number = int(row["Shelf Number"]) if pd.notna(row.get("Shelf Number")) else None
+                drawer_index = int(row["Drawer Index"]) if pd.notna(row.get("Drawer Index")) else None
+                storage_box_index = int(row["Storage Box Index"]) if pd.notna(row.get("Storage Box Index")) else None
+                
+                # Container code - optional, only for CABINET storage
+                container_code = None
+                container_id = None
+                if storage_type == "CABINET":
+                    container_code_val = row.get("Container Code")
+                    if pd.notna(container_code_val) and str(container_code_val).strip() and str(container_code_val).strip().lower() != "nan":
+                        container_code = str(container_code_val).strip()
+                        container = db.query(Container).filter(Container.code == container_code).first()
+                        if not container:
+                            errors.append(f"Row {idx+2} (Components): Container '{container_code}' not found in database")
+                            continue
+                        container_id = container.id
+                    
+                    # Validate cabinet and shelf for CABINET storage
+                    if cabinet_number is None:
+                        errors.append(f"Row {idx+2} (Components): Cabinet Number is required for CABINET storage")
+                        continue
+                    if shelf_number is None:
+                        errors.append(f"Row {idx+2} (Components): Shelf Number is required for CABINET storage")
+                        continue
+                    if not (1 <= cabinet_number <= 10):
+                        errors.append(f"Row {idx+2} (Components): Cabinet Number must be between 1 and 10")
+                        continue
+                    if not (0 <= shelf_number <= 5):
+                        errors.append(f"Row {idx+2} (Components): Shelf Number must be between 0 and 5")
+                        continue
+                    
+                    # Validate container belongs to cabinet if provided
+                    if container_id and container.cabinet_number != cabinet_number:
+                        errors.append(f"Row {idx+2} (Components): Container '{container_code}' does not belong to cabinet {cabinet_number}")
+                        continue
+                
+                elif storage_type == "DRAWER":
+                    if drawer_index is None or drawer_index < 1:
+                        errors.append(f"Row {idx+2} (Components): Drawer Index is required and must be >= 1 for DRAWER storage")
+                        continue
+                
+                elif storage_type == "STORAGE_BOX":
+                    if storage_box_index is None or storage_box_index < 1:
+                        errors.append(f"Row {idx+2} (Components): Storage Box Index is required and must be >= 1 for STORAGE_BOX storage")
+                        continue
+                
+                # Location type/index (for boxes/partitions in containers or drawers)
                 location_type = str(row.get("Location Type", "NONE")).strip().upper() if pd.notna(row.get("Location Type")) else "NONE"
                 location_index = int(row["Location Index"]) if pd.notna(row.get("Location Index")) else None
                 
-                if location_type not in ["NONE", "BOX", "PARTITION"]:
-                    errors.append(f"Row {idx+2} (Components): Invalid location_type '{location_type}'. Must be NONE, BOX, or PARTITION")
+                # Only allow box/partition for CABINET with container or DRAWER
+                if storage_type == "STORAGE_BOX" and location_type != "NONE":
+                    errors.append(f"Row {idx+2} (Components): STORAGE_BOX cannot have BOX or PARTITION location_type")
                     continue
                 
-                if location_type != "NONE" and location_index is None:
-                    errors.append(f"Row {idx+2} (Components): location_index is required when location_type is '{location_type}'")
-                    continue
-                
-                if location_index is not None and (location_index < 1 or location_index > 15):
-                    errors.append(f"Row {idx+2} (Components): location_index must be between 1 and 15")
-                    continue
+                if (storage_type == "CABINET" and container_id) or storage_type == "DRAWER":
+                    if location_type not in ["NONE", "BOX", "PARTITION"]:
+                        errors.append(f"Row {idx+2} (Components): Invalid location_type '{location_type}'. Must be NONE, BOX, or PARTITION")
+                        continue
+                    
+                    if location_type != "NONE" and location_index is None:
+                        errors.append(f"Row {idx+2} (Components): location_index is required when location_type is '{location_type}'")
+                        continue
+                    
+                    if location_index is not None and (location_index < 1 or location_index > 15):
+                        errors.append(f"Row {idx+2} (Components): location_index must be between 1 and 15")
+                        continue
+                else:
+                    # For bare cabinet or storage box, location_type must be NONE
+                    if location_type != "NONE":
+                        location_type = "NONE"
+                        location_index = None
                 
                 # Parse dates safely (handle %d/%m/%Y %H:%M:%S format)
                 # Convert pandas Timestamp to Python datetime for SQLite compatibility
@@ -303,7 +369,12 @@ def restructure_from_excel(
                     "name": name,
                     "category": category,
                     "quantity": quantity,
-                    "container_id": container.id,
+                    "storage_type": storage_type,
+                    "cabinet_number": cabinet_number,
+                    "shelf_number": shelf_number,
+                    "container_id": container_id,
+                    "drawer_index": drawer_index,
+                    "storage_box_index": storage_box_index,
                     "location_type": location_type,
                     "location_index": location_index,
                     "remarks": str(row.get("Remarks", "")) if pd.notna(row.get("Remarks")) else None,
@@ -327,7 +398,100 @@ def restructure_from_excel(
                 "backup_path": backup_path
             })
         
-        # Process Borrow Items - only keep those referencing ACTIVE components
+        # Process Borrow Transactions first (to establish transaction IDs)
+        borrowers_map = {}  # Maps (name, tp_id, phone, email) tuple to borrower_id
+        borrow_transactions_data = []
+        transaction_ids_set = set()
+        
+        for idx, row in df_borrow_transactions.iterrows():
+            try:
+                tx_id = int(row["ID"])
+                borrower_name = str(row["Borrower Name"]).strip().upper()
+                borrower_tp_id = str(row["TP ID"]).strip().upper()
+                borrower_phone = str(row["Phone"]).strip()
+                borrower_email = str(row["Email"]).strip().lower()
+                pic_name = str(row["PIC Name"]).strip()
+                
+                if not borrower_name or not borrower_tp_id or not borrower_phone or not borrower_email:
+                    errors.append(f"Row {idx+2} (Borrow Transactions): Borrower information is incomplete")
+                    continue
+                
+                # Create borrower key for deduplication
+                borrower_key = (borrower_name, borrower_tp_id, borrower_phone, borrower_email)
+                if borrower_key not in borrowers_map:
+                    # Assign a temporary ID (will be reassigned during insert)
+                    borrowers_map[borrower_key] = len(borrowers_map) + 1
+                
+                # Validate status
+                status_str = str(row.get("Status", "ACTIVE")).strip().upper()
+                if status_str not in ["ACTIVE", "OVERDUE", "COMPLETED"]:
+                    errors.append(f"Row {idx+2} (Borrow Transactions): Invalid status '{status_str}'. Must be ACTIVE, OVERDUE, or COMPLETED")
+                    continue
+                
+                # Parse expected return date
+                try:
+                    expected_return_str = row.get("Expected Return Date")
+                    if pd.notna(expected_return_str):
+                        expected_return_ts = pd.to_datetime(expected_return_str, dayfirst=True, errors='coerce')
+                        if pd.isna(expected_return_ts):
+                            expected_return_ts = pd.to_datetime(expected_return_str, errors='coerce')
+                        if pd.isna(expected_return_ts):
+                            errors.append(f"Row {idx+2} (Borrow Transactions): Invalid Expected Return Date format")
+                            continue
+                        expected_return = expected_return_ts.date()
+                    else:
+                        errors.append(f"Row {idx+2} (Borrow Transactions): Expected Return Date is required")
+                        continue
+                except Exception as e:
+                    errors.append(f"Row {idx+2} (Borrow Transactions): Invalid Expected Return Date format - {str(e)}")
+                    continue
+                
+                # Parse borrowed_at date
+                try:
+                    borrowed_at_str = row.get("Borrowed At")
+                    if pd.notna(borrowed_at_str):
+                        borrowed_at_ts = pd.to_datetime(borrowed_at_str, dayfirst=True, errors='coerce')
+                        if pd.isna(borrowed_at_ts):
+                            borrowed_at_ts = pd.to_datetime(borrowed_at_str, errors='coerce')
+                        if pd.isna(borrowed_at_ts):
+                            borrowed_at = datetime.utcnow()
+                        else:
+                            borrowed_at = borrowed_at_ts.to_pydatetime()
+                    else:
+                        borrowed_at = datetime.utcnow()
+                except:
+                    borrowed_at = datetime.utcnow()
+                
+                reason = str(row.get("Reason", "")).strip()
+                if not reason:
+                    errors.append(f"Row {idx+2} (Borrow Transactions): Reason is required")
+                    continue
+                
+                if tx_id in transaction_ids_set:
+                    errors.append(f"Row {idx+2} (Borrow Transactions): Duplicate Transaction ID {tx_id}")
+                    continue
+                
+                transaction_ids_set.add(tx_id)
+                
+                borrow_transactions_data.append({
+                    "id": tx_id,
+                    "borrower_key": borrower_key,
+                    "borrower_name": borrower_name,
+                    "borrower_tp_id": borrower_tp_id,
+                    "borrower_phone": borrower_phone,
+                    "borrower_email": borrower_email,
+                    "pic_name": pic_name,
+                    "reason": reason,
+                    "expected_return_date": expected_return,
+                    "status": status_str,
+                    "borrowed_at": borrowed_at
+                })
+            except ValueError as e:
+                errors.append(f"Row {idx+2} (Borrow Transactions): Invalid data type - {str(e)}")
+            except Exception as e:
+                errors.append(f"Row {idx+2} (Borrow Transactions): {str(e)}")
+        
+        # Process Borrow Items - only keep those referencing ACTIVE components and valid transactions
         borrow_items_data = []
         deleted_component_ids = {comp["id"] for comp in all_components_data if comp.get("is_deleted", False)}
         
@@ -339,13 +503,19 @@ def restructure_from_excel(
                 qty_borrowed = int(row["Quantity Borrowed"])
                 qty_returned = int(row.get("Quantity Returned", 0)) if pd.notna(row.get("Quantity Returned")) else 0
                 
-                # Skip borrow items referencing deleted components
-                if component_id in deleted_component_ids:
-                    continue  # Silently skip - this is expected behavior
+                # Validate transaction exists
+                if transaction_id not in transaction_ids_set:
+                    errors.append(f"Row {idx+2} (Borrow Items): Transaction ID {transaction_id} not found in Borrow Transactions sheet")
+                    continue
                 
-                # Validate component exists in active components
+                # Skip borrow items referencing deleted components (silently skip - expected behavior)
+                if component_id in deleted_component_ids:
+                    continue
+                
+                # Skip borrow items referencing components that don't exist in active components
+                # This can happen if the Excel file was manually edited and component IDs were removed
                 if component_id not in active_component_ids:
-                    errors.append(f"Row {idx+2} (Borrow Items): Component ID {component_id} not found in active components")
+                    # Skip instead of error - the component might have been deleted/removed from the Excel file
                     continue
                 
                 if qty_borrowed <= 0:
@@ -406,18 +576,85 @@ def restructure_from_excel(
         db.execute(text("PRAGMA foreign_keys=OFF"))
         
         try:
-            # Step 1: Delete all existing borrow items and components
+            # Step 1: Delete all existing data (in correct order due to foreign keys)
+            db.execute(text("DELETE FROM return_events"))  # Delete return events first (they reference borrow_items)
             db.execute(text("DELETE FROM borrow_items"))
+            db.execute(text("DELETE FROM borrow_transactions"))
+            db.execute(text("DELETE FROM borrowers"))
             db.execute(text("DELETE FROM components"))
             db.flush()
             
-            # Step 2: Insert active components with their ORIGINAL IDs (no reshuffling)
+            # Step 2: Insert borrowers first (need borrower IDs for transactions)
+            borrower_id_map = {}  # Maps borrower_key to actual inserted borrower_id
+            borrowers_to_insert = []
+            seen_borrower_keys = set()  # Track which borrowers we've already collected
+            
+            # Collect unique borrowers from transactions
+            for tx in borrow_transactions_data:
+                borrower_key = tx["borrower_key"]
+                if borrower_key not in seen_borrower_keys:
+                    seen_borrower_keys.add(borrower_key)
+                    borrowers_to_insert.append({
+                        "key": borrower_key,
+                        "name": tx["borrower_name"],
+                        "tp_id": tx["borrower_tp_id"],
+                        "phone": tx["borrower_phone"],
+                        "email": tx["borrower_email"]
+                    })
+            
+            # Insert borrowers and build ID mapping
+            for borrower in borrowers_to_insert:
+                cursor = db.execute(text("""
+                    INSERT INTO borrowers (name, tp_id, phone, email)
+                    VALUES (:name, :tp_id, :phone, :email)
+                """), {
+                    'name': borrower["name"],
+                    'tp_id': borrower["tp_id"],
+                    'phone': borrower["phone"],
+                    'email': borrower["email"]
+                })
+                borrower_id = cursor.lastrowid
+                borrower_id_map[borrower["key"]] = borrower_id
+            
+            db.flush()
+            
+            # Step 3: Insert borrow transactions
+            for tx in borrow_transactions_data:
+                borrower_key = tx["borrower_key"]
+                borrower_id = borrower_id_map[borrower_key]
+                
+                # Resolve PIC name to User ID (creates user if doesn't exist)
+                pic_user = resolve_user(db, tx["pic_name"])
+                
+                # Convert status string to BorrowStatus enum
+                status_enum = BorrowStatus[tx["status"]]
+                
+                db.execute(text("""
+                    INSERT INTO borrow_transactions 
+                    (id, borrower_id, borrowed_by_id, reason, expected_return_date, status, borrowed_at, overdue_email_sent)
+                    VALUES (:id, :borrower_id, :borrowed_by_id, :reason, :expected_return_date, :status, :borrowed_at, :overdue_email_sent)
+                """), {
+                    'id': tx["id"],
+                    'borrower_id': borrower_id,
+                    'borrowed_by_id': pic_user.id,
+                    'reason': tx["reason"],
+                    'expected_return_date': tx["expected_return_date"],
+                    'status': status_enum.value,
+                    'borrowed_at': tx["borrowed_at"],
+                    'overdue_email_sent': False
+                })
+            
+            db.flush()
+            
+            # Step 4: Insert active components with their ORIGINAL IDs (no reshuffling)
             for comp in active_components_data:
                 db.execute(text("""
                     INSERT INTO components 
-                    (id, name, category, quantity, remarks, image_path, container_id, 
+                    (id, name, category, quantity, remarks, image_path, 
+                     storage_type, cabinet_number, shelf_number, container_id, drawer_index, storage_box_index,
                      location_type, location_index, is_deleted, deleted_reason, deleted_at, created_at, updated_at)
-                    VALUES (:id, :name, :category, :quantity, :remarks, :image_path, :container_id,
+                    VALUES (:id, :name, :category, :quantity, :remarks, :image_path,
+                            :storage_type, :cabinet_number, :shelf_number, :container_id, :drawer_index, :storage_box_index,
                             :location_type, :location_index, :is_deleted, :deleted_reason, :deleted_at, :created_at, :updated_at)
                 """), {
                     'id': comp["id"],  # Keep original ID from Excel
@@ -426,7 +663,12 @@ def restructure_from_excel(
                     'quantity': comp["quantity"],
                     'remarks': comp["remarks"],
                     'image_path': comp["image_path"],
+                    'storage_type': comp["storage_type"],
+                    'cabinet_number': comp["cabinet_number"],
+                    'shelf_number': comp["shelf_number"],
                     'container_id': comp["container_id"],
+                    'drawer_index': comp["drawer_index"],
+                    'storage_box_index': comp["storage_box_index"],
                     'location_type': comp["location_type"],
                     'location_index': comp["location_index"],
                     'is_deleted': 0,
@@ -438,7 +680,7 @@ def restructure_from_excel(
             
             db.flush()
             
-            # Step 3: Insert borrow items (only those referencing active components)
+            # Step 5: Insert borrow items (only those referencing active components and valid transactions)
             # Keep original IDs but ensure no conflicts
             for item in borrow_items_data:
                 db.execute(text("""
@@ -455,7 +697,7 @@ def restructure_from_excel(
             
             db.flush()
             
-            # Step 4: Re-enable foreign keys
+            # Step 6: Re-enable foreign keys
             db.execute(text("PRAGMA foreign_keys=ON"))
             
             db.commit()
@@ -468,6 +710,8 @@ def restructure_from_excel(
                 "message": "Database restructured successfully from Excel file",
                 "active_components_imported": len(active_components_data),
                 "deleted_components_removed": deleted_components_count,
+                "borrowers_imported": len(borrowers_to_insert),
+                "borrow_transactions_imported": len(borrow_transactions_data),
                 "borrow_items_imported": len(borrow_items_data),
                 "borrow_items_removed_for_deleted_components": removed_borrow_items_count,
                 "backup_path": backup_path

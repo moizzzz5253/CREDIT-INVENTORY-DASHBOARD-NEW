@@ -109,7 +109,7 @@ function SearchableComponentSelect({ components, value, onChange, required }) {
 
 export default function BorrowNew() {
   const [formData, setFormData] = useState({
-    borrower: { name: '', tp_id: '', phone: '' },
+    borrower: { name: '', tp_id: '', phone: '', email: '' },
     items: [{ component_id: '', quantity: 1 }],
     reason: '',
     expected_return_date: new Date().toISOString().split('T')[0], // Today
@@ -162,8 +162,14 @@ export default function BorrowNew() {
   };
 
   const validateForm = () => {
-    if (!formData.borrower.name || !formData.borrower.tp_id || !formData.borrower.phone) {
-      setMessage('Borrower name, ID, and phone are mandatory.');
+    if (!formData.borrower.name || !formData.borrower.tp_id || !formData.borrower.phone || !formData.borrower.email) {
+      setMessage('Borrower name, ID, phone, and email are mandatory.');
+      return false;
+    }
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.borrower.email)) {
+      setMessage('Please enter a valid email address.');
       return false;
     }
     if (!formData.reason || !formData.pic_name) {
@@ -176,9 +182,12 @@ export default function BorrowNew() {
         return false;
       }
       const comp = components.find(c => c.id == item.component_id);
-      if (comp && item.quantity > comp.quantity - comp.borrowed_quantity) {
-        setMessage(`Quantity for ${comp.name} exceeds available.`);
-        return false;
+      if (comp) {
+        const available = (comp.available_quantity || 0);
+        if (item.quantity > available) {
+          setMessage(`Quantity for ${comp.name} exceeds available. Available: ${available}, Requested: ${item.quantity}`);
+          return false;
+        }
       }
     }
     return true;
@@ -201,7 +210,7 @@ export default function BorrowNew() {
       setMessageType('success');
       // Reset form
       setFormData({
-        borrower: { name: '', tp_id: '', phone: '' },
+        borrower: { name: '', tp_id: '', phone: '', email: '' },
         items: [{ component_id: '', quantity: 1 }],
         reason: '',
         expected_return_date: new Date().toISOString().split('T')[0],
@@ -246,6 +255,15 @@ export default function BorrowNew() {
             name="phone"
             placeholder="Phone"
             value={formData.borrower.phone}
+            onChange={handleBorrowerChange}
+            className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded mt-2 text-zinc-200 placeholder-zinc-400"
+            required
+          />
+          <input
+            type="email"
+            name="email"
+            placeholder="Email"
+            value={formData.borrower.email}
             onChange={handleBorrowerChange}
             className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded mt-2 text-zinc-200 placeholder-zinc-400"
             required

@@ -9,16 +9,23 @@ export default function ComponentCard({ component, onModify, onDelete, onView })
 
   const handleView = () => {
     if (onView) return onView(component);
-    navigate(`/containers/${component.container.code}`);
+    // Only navigate to container if it exists (CABINET storage with container)
+    if (component.container?.code) {
+      navigate(`/containers/${component.container.code}`);
+    } else {
+      // For drawers/storage boxes, or bare cabinet storage, just show alert
+      alert(`Location: ${getLocationLabel(component)}`);
+    }
   };
 
-  // ✅ CORRECT label logic based on ACTUAL API response
-  const getContainerLabel = (component) => {
+  // Get location label from API response
+  const getLocationLabel = (component) => {
+    // Use the location label from the API (already formatted correctly)
     if (component?.location?.label) {
-      return component.location.label; // e.g. B3-b2
+      return component.location.label; // e.g. "Cabinet 1 Shelf 2 A2-b1", "Drawer 1", "Storage Box 1"
     }
-
-    return component?.container?.code ?? "Unknown";
+    // Fallback for old data
+    return component?.container?.code ?? "Unknown Location";
   };
 
   return (
@@ -48,7 +55,7 @@ export default function ComponentCard({ component, onModify, onDelete, onView })
           </p>
 
           <p className="text-zinc-400 text-sm">
-            Container: {getContainerLabel(component)}
+            Location: {getLocationLabel(component)}
           </p>
 
           {component.remarks && (

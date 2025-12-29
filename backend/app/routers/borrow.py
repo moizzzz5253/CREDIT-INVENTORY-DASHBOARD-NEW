@@ -7,6 +7,7 @@ from app.database.models import BorrowTransaction, BorrowItem, Borrower, Compone
 from app.schemas.borrow import BorrowCreate, BorrowTransactionRead
 from app.utils.user_resolver import resolve_user
 from app.utils.borrow_mapper import borrow_transaction_to_read
+from app.services.email_service import email_service
 
 router = APIRouter(prefix="/borrow", tags=["Borrow"])
 
@@ -17,7 +18,8 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
     borrower = Borrower(
         name=data.borrower.name.upper(),
         tp_id=data.borrower.tp_id.upper(),
-        phone=data.borrower.phone
+        phone=data.borrower.phone,
+        email=data.borrower.email.lower()
     )
 
     db.add(borrower)
@@ -42,16 +44,30 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
             Component.is_deleted == False
         ).first()
 
-        if not component or component.quantity < item.quantity:
-            raise HTTPException(400, "Invalid component or quantity")
+        if not component:
+            raise HTTPException(400, "Invalid component")
+        
+        # Calculate available quantity: total - borrowed
+        borrowed_qty = sum(
+            b.quantity_borrowed - b.quantity_returned
+            for b in component.borrow_items
+        )
+        available_qty = component.quantity - borrowed_qty
+        
+        if available_qty < item.quantity:
+            raise HTTPException(
+                400, 
+                f"Insufficient quantity. Available: {available_qty}, Requested: {item.quantity}"
+            )
         
         if data.expected_return_date < date.today():
             raise HTTPException(
                 status_code=400,
                 detail="Expected return date cannot be earlier than borrowed date"
-    )
-        component.quantity -= item.quantity
+            )
 
+        # Don't modify component.quantity - it represents total quantity
+        # Available quantity is calculated dynamically: total - borrowed
         db.add(BorrowItem(
             transaction_id=tx.id,
             component_id=component.id,
@@ -59,6 +75,35 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
         ))
 
     db.commit()
+    db.refresh(tx)  # Refresh to load items relationship
+    
+    # Send email notification to borrower
+    try:
+        # Prepare items data for email
+        email_items = []
+        for item in tx.items:
+            if item.component:
+                email_items.append({
+                    'component_name': item.component.name,
+                    'category': item.component.category,
+                    'quantity': item.quantity_borrowed
+                })
+        
+        if borrower.email and email_items:
+            email_service.send_borrow_notification(
+                borrower_email=borrower.email,
+                borrower_name=borrower.name,
+                items=email_items,
+                expected_return_date=tx.expected_return_date,
+                reason=tx.reason,
+                borrowed_at=tx.borrowed_at,
+                pic_name=pic_user.name
+            )
+    except Exception as e:
+        # Log error but don't fail the transaction
+        from loguru import logger
+        logger.error(f"Failed to send borrow notification email: {e}")
+    
     return borrow_transaction_to_read(tx)
 
 @router.get("/active", tags=["Borrow"])
@@ -98,6 +143,7 @@ def get_active_borrows(db: Session = Depends(get_db)):
                     "borrower_name": tx.borrower.name,
                     "tp_id": tx.borrower.tp_id,
                     "phone": tx.borrower.phone,
+                    "email": tx.borrower.email,
                     "component_name": item.component.name,
                     "remaining_quantity": remaining,
                     "quantity_borrowed": item.quantity_borrowed,

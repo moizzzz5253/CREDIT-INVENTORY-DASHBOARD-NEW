@@ -3,6 +3,7 @@ import { getAllComponents, deleteComponent, updateComponent, getCategories } fro
 import { getAllContainers } from "../api/containers.api";
 import ComponentCard from "../components/ComponentCard";
 import Modal from "../components/Modal";
+import StorageLocationForm from "../components/StorageLocationForm";
 
 export default function ManageComponents() {
   const [components, setComponents] = useState([]);
@@ -52,15 +53,21 @@ export default function ManageComponents() {
   };
 
   const handleModify = (component) => {
-    // Prefill editing state with full component data
+    // Prefill editing state with full component data including new storage fields
     setEditing({
       id: component.id,
       name: component.name,
       quantity: component.quantity,
-      remarks: component.remarks,
+      remarks: component.remarks || "",
       category: component.category,
-      container: component.container,
-      location: { type: component.location.type, index: component.location.index },
+      storage_type: component.storage_type || "CABINET",
+      cabinet_number: component.cabinet_number || null,
+      shelf_number: component.shelf_number !== undefined ? component.shelf_number : null,
+      container_id: component.container?.id || null,
+      drawer_index: component.drawer_index || null,
+      storage_box_index: component.storage_box_index || null,
+      location_type: component.location?.type || "NONE",
+      location_index: component.location?.index || null,
       image: null,
       created_at: component.created_at,
     });
@@ -75,9 +82,14 @@ export default function ManageComponents() {
         quantity: editing.quantity,
         remarks: editing.remarks,
         category: editing.category,
-        container_id: editing.container.id,
-        location_type: editing.location.type,
-        location_index: editing.location.index,
+        storage_type: editing.storage_type,
+        cabinet_number: editing.cabinet_number,
+        shelf_number: editing.shelf_number,
+        container_id: editing.container_id || undefined,
+        drawer_index: editing.drawer_index,
+        storage_box_index: editing.storage_box_index,
+        location_type: editing.location_type,
+        location_index: editing.location_type !== "NONE" ? editing.location_index : undefined,
       };
       if (editing.image) payload.image = editing.image;
       await updateComponent(editing.id, payload);
@@ -85,6 +97,49 @@ export default function ManageComponents() {
       setShowEditModal(false);
       await load();
     } catch (err) { alert(err?.response?.data?.detail || 'Update failed'); }
+  };
+  
+  const handleEditingChange = (field, value) => {
+    setEditing((prev) => {
+      const newEditing = { ...prev, [field]: value };
+      
+      // Reset dependent fields when storage_type changes
+      if (field === "storage_type") {
+        if (value === "CABINET") {
+          newEditing.drawer_index = null;
+          newEditing.storage_box_index = null;
+        } else if (value === "DRAWER") {
+          newEditing.cabinet_number = null;
+          newEditing.shelf_number = null;
+          newEditing.container_id = null;
+        } else if (value === "STORAGE_BOX") {
+          newEditing.cabinet_number = null;
+          newEditing.shelf_number = null;
+          newEditing.container_id = null;
+          newEditing.drawer_index = null;
+          newEditing.location_type = "NONE";
+          newEditing.location_index = null;
+        }
+      }
+      
+      // Reset container_id when cabinet_number changes
+      if (field === "cabinet_number") {
+        newEditing.container_id = null;
+      }
+      
+      // Reset location_type/index when container_id is cleared or shelf is 0
+      if (field === "container_id" && !value) {
+        newEditing.location_type = "NONE";
+        newEditing.location_index = null;
+      }
+      if (field === "shelf_number" && value === 0) {
+        newEditing.container_id = null;
+        newEditing.location_type = "NONE";
+        newEditing.location_index = null;
+      }
+      
+      return newEditing;
+    });
   };
 
   const confirmDelete = async () => {
@@ -145,27 +200,26 @@ export default function ManageComponents() {
                 </div>
               </div>
 
-              <div>
-                <label className="text-sm text-zinc-300">Container</label>
-                <select value={editing.container.id} onChange={(e) => setEditing({ ...editing, container: containers.find(x => x.id === parseInt(e.target.value,10)) })} className="rounded bg-zinc-800 p-2 text-white">
-                  {containers.map(c => <option key={c.id} value={c.id}>{c.code} - {c.cabinet_number}</option>)}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-sm text-zinc-300">Location Type</label>
-                  <select value={editing.location.type} onChange={(e) => setEditing({ ...editing, location: { ...editing.location, type: e.target.value, index: editing.location.index } })} className="rounded bg-zinc-800 p-2 text-white">
-                    <option value="NONE">None</option>
-                    <option value="BOX">BOX</option>
-                    <option value="PARTITION">PARTITION</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm text-zinc-300">Location Index</label>
-                  <input disabled={editing.location.type === 'NONE'} type="number" min={1} max={15} value={editing.location.index || ''} onChange={(e) => setEditing({ ...editing, location: { ...editing.location, index: e.target.value ? parseInt(e.target.value,10) : null } })} className="rounded bg-zinc-800 p-2 text-white" />
-                </div>
-              </div>
+              {/* Storage Location Form */}
+              <StorageLocationForm
+                storageType={editing.storage_type}
+                cabinetNumber={editing.cabinet_number}
+                shelfNumber={editing.shelf_number}
+                containerId={editing.container_id}
+                drawerIndex={editing.drawer_index}
+                storageBoxIndex={editing.storage_box_index}
+                locationType={editing.location_type}
+                locationIndex={editing.location_index}
+                containers={containers}
+                onStorageTypeChange={(v) => handleEditingChange('storage_type', v)}
+                onCabinetNumberChange={(v) => handleEditingChange('cabinet_number', v)}
+                onShelfNumberChange={(v) => handleEditingChange('shelf_number', v)}
+                onContainerIdChange={(v) => handleEditingChange('container_id', v)}
+                onDrawerIndexChange={(v) => handleEditingChange('drawer_index', v)}
+                onStorageBoxIndexChange={(v) => handleEditingChange('storage_box_index', v)}
+                onLocationTypeChange={(v) => handleEditingChange('location_type', v)}
+                onLocationIndexChange={(v) => handleEditingChange('location_index', v)}
+              />
 
               <label className="text-sm text-zinc-300">Remarks</label>
               <textarea value={editing.remarks || ''} onChange={(e) => setEditing({ ...editing, remarks: e.target.value })} className="w-full rounded bg-zinc-800 p-2 text-white" />

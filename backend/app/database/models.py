@@ -38,6 +38,7 @@ class Container(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String, unique=True, index=True, nullable=False)
     cabinet_number = Column(Integer, nullable=False)
+    shelf_number = Column(Integer, nullable=True)  # 1-5, NULL if not assigned to shelf
     qr_path = Column(String, nullable=False)
 
     components = relationship(
@@ -62,9 +63,22 @@ class Component(Base):
     remarks = Column(String(500))
     image_path = Column(String, nullable=False)
 
-    container_id = Column(Integer, ForeignKey("containers.id"), nullable=False)
-
-    location_type = Column(String(20), default="NONE", nullable=False)
+    # Storage location fields
+    storage_type = Column(String(20), default="CABINET", nullable=False)  # CABINET | DRAWER | STORAGE_BOX
+    
+    # For CABINET storage
+    cabinet_number = Column(Integer, nullable=True)
+    shelf_number = Column(Integer, nullable=True)  # 0-5, 0 = no shelf
+    container_id = Column(Integer, ForeignKey("containers.id"), nullable=True)  # Made nullable
+    
+    # For DRAWER storage
+    drawer_index = Column(Integer, nullable=True)
+    
+    # For STORAGE_BOX storage
+    storage_box_index = Column(Integer, nullable=True)
+    
+    # Box/Partition within container/drawer (existing location fields)
+    location_type = Column(String(20), default="NONE", nullable=False)  # NONE | BOX | PARTITION
     location_index = Column(Integer)
 
     is_deleted = Column(Boolean, default=False)
@@ -93,6 +107,7 @@ class Borrower(Base):
     name = Column(String, nullable=False, index=True)
     tp_id = Column(String, nullable=False, index=True)
     phone = Column(String, nullable=False, index=True)
+    email = Column(String, nullable=False, index=True)
 
     transactions = relationship(
         "BorrowTransaction",
@@ -122,6 +137,7 @@ class BorrowTransaction(Base):
     expected_return_date = Column(Date, nullable=False)
 
     status = Column(Enum(BorrowStatus), default=BorrowStatus.ACTIVE, nullable=False)
+    overdue_email_sent = Column(Boolean, default=False, nullable=False)
 
     borrower = relationship("Borrower", back_populates="transactions")
 

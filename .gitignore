@@ -28,9 +28,9 @@ Thumbs.db
 .idea/
 .cursor/
 
-# Env files
-.env
-.env.*
+# Env files - NOT ignored (tracked in private repo)
+# .env
+# .env.*
 
 # Database backups
 database_backups/
@@ -39,8 +39,8 @@ database_backups/
 *.bak
 
 # Uploads and generated files
-uploads/
-qr_codes/
+backend/uploads/
+backend/qr_codes/
 **/uploads/
 **/qr_codes/
 

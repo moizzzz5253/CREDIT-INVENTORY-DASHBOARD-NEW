@@ -36,6 +36,7 @@ def get_history(db: Session = Depends(get_db)):
                     "borrower_name": tx.borrower.name,
                     "tp_id": tx.borrower.tp_id,
                     "phone": tx.borrower.phone,
+                    "email": tx.borrower.email,
                     "component_name": item.component.name,
                     "component_category": item.component.category,
                     "borrowed_qty": item.quantity_borrowed,

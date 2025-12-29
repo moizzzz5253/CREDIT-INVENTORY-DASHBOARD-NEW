@@ -51,12 +51,13 @@ export default function History() {
 
     let filtered = [...history];
 
-    // Search filter (only search by component name, borrower name, and returned_by PIC)
+    // Search filter (only search by component name, borrower name, email, and returned_by PIC)
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase();
       filtered = filtered.filter(item =>
         item.component_name.toLowerCase().includes(searchLower) ||
         item.borrower_name.toLowerCase().includes(searchLower) ||
+        (item.email && item.email.toLowerCase().includes(searchLower)) ||
         (item.returned_by && item.returned_by.toLowerCase().includes(searchLower))
       );
     }
@@ -243,7 +244,7 @@ export default function History() {
             <div>
               <input
                 type="text"
-                placeholder="Search by component name, borrower name, or PIC (returned)..."
+                placeholder="Search by component name, borrower name, email, or PIC (returned)..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white placeholder-zinc-400 focus:outline-none focus:border-blue-500"
@@ -353,6 +354,11 @@ export default function History() {
                           <p className="text-zinc-300 text-sm mb-1">
                             <strong>Phone:</strong> {item.phone}
                           </p>
+                          {item.email && (
+                            <p className="text-zinc-300 text-sm mb-1">
+                              <strong>Email:</strong> {item.email}
+                            </p>
+                          )}
                           <p className="text-zinc-300 text-sm mb-1">
                             <strong>PIC (Borrowed):</strong> {item.borrowed_by_pic || 'N/A'}
                           </p>

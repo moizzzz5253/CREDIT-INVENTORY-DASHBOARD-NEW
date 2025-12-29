@@ -10,6 +10,7 @@ export default function ContainerDetail() {
   const [components, setComponents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedBox, setSelectedBox] = useState(null);
+  const [selectedComponent, setSelectedComponent] = useState(null);
 
   useEffect(() => {
     loadComponents();
@@ -123,7 +124,10 @@ export default function ContainerDetail() {
                   return (
                     <div
                       key={`${rowIndex}-${colIndex}`}
-                      className="aspect-square border border-zinc-600 rounded flex flex-col items-center justify-center p-0 bg-zinc-800 relative overflow-hidden"
+                      onClick={() => comp && setSelectedComponent(comp)}
+                      className={`aspect-square border border-zinc-600 rounded flex flex-col items-center justify-center p-0 bg-zinc-800 relative overflow-hidden ${
+                        comp ? 'cursor-pointer hover:border-blue-500 hover:shadow-lg transition-all' : ''
+                      }`}
                     >
                       <div className="absolute top-0.5 left-0.5 text-white text-xs font-bold bg-zinc-700 bg-opacity-80 px-1 rounded z-10">
                         p{partitionIndex}
@@ -143,12 +147,106 @@ export default function ContainerDetail() {
           </div>
         )}
 
+        {/* Component Detail Modal */}
+        {selectedComponent && (
+          <ComponentModal
+            component={selectedComponent}
+            onClose={() => setSelectedComponent(null)}
+          />
+        )}
+
         {directComponents.length === 0 && boxIndices.length === 0 && partitionComponents.length === 0 && (
           <div className="text-center text-zinc-400 py-8">
             No components found in this container.
           </div>
         )}
       </div>
+  );
+}
+
+// Modal component for displaying larger component details
+function ComponentModal({ component, onClose }) {
+  if (!component) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-zinc-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-zinc-700"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 bg-zinc-800 border-b border-zinc-700 px-6 py-4 flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-white">Component Details</h2>
+          <button
+            onClick={onClose}
+            className="text-zinc-400 hover:text-white text-3xl font-bold leading-none"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          {/* Image */}
+          <div className="flex justify-center mb-6">
+            <img
+              src={`${API_BASE}/${component.image_path}`}
+              alt={component.name}
+              className="max-w-full h-auto max-h-96 object-contain rounded-lg"
+              onError={(e) => {
+                e.currentTarget.src = "/placeholder.png";
+              }}
+            />
+          </div>
+
+          {/* Details */}
+          <div className="space-y-4">
+            <div>
+              <label className="text-zinc-400 text-sm uppercase tracking-wide">Name</label>
+              <p className="text-white text-2xl font-bold mt-1">{component.name}</p>
+            </div>
+
+            <div>
+              <label className="text-zinc-400 text-sm uppercase tracking-wide">Category</label>
+              <p className="text-white text-xl mt-1">{component.category}</p>
+            </div>
+
+            <div>
+              <label className="text-zinc-400 text-sm uppercase tracking-wide">Quantity</label>
+              <p className="text-white text-xl font-semibold mt-1">Qty: {component.quantity}</p>
+            </div>
+
+            {component.location && component.location.label && (
+              <div>
+                <label className="text-zinc-400 text-sm uppercase tracking-wide">Location</label>
+                <p className="text-white text-xl mt-1">{component.location.label}</p>
+              </div>
+            )}
+
+            {component.description && (
+              <div>
+                <label className="text-zinc-400 text-sm uppercase tracking-wide">Description</label>
+                <p className="text-white text-lg mt-1">{component.description}</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-zinc-800 border-t border-zinc-700 px-6 py-4">
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-semibold"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -164,7 +262,7 @@ function ComponentCard({ component, compact = false }) {
             src={`${API_BASE}/${component.image_path}`}
             alt={component.name}
             style={{ width: '75%', height: '75%', objectFit: 'cover' }}
-            className="rounded flex-shrink-0"
+            className="rounded shrink-0"
             onError={(e) => {
               e.currentTarget.src = "/placeholder.png";
             }}
@@ -193,7 +291,7 @@ function ComponentCard({ component, compact = false }) {
         <img
           src={`${API_BASE}/${component.image_path}`}
           alt={component.name}
-          className="w-16 h-16 object-cover rounded flex-shrink-0"
+          className="w-16 h-16 object-cover rounded shrink-0"
           onError={(e) => {
             e.currentTarget.src = "/placeholder.png";
           }}

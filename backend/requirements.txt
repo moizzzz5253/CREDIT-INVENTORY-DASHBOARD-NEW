@@ -12,7 +12,7 @@ alembic
 pydantic
 pydantic-settings
 python-dateutil
-
+pydantic[email]
 # -------------------------------
 # File Uploads & Images
 # -------------------------------
@@ -42,3 +42,14 @@ python-jose[cryptography]
 # -------------------------------
 python-dotenv
 loguru
+
+# -------------------------------
+# Email
+# -------------------------------
+email-validator
+pytz
+
+# -------------------------------
+# Scheduling
+# -------------------------------
+apscheduler

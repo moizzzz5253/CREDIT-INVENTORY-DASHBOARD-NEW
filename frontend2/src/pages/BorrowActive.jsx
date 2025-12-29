@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getActiveBorrows } from '../api/borrow.api.js';
-import { returnComponent } from '../api/returns.api.js';
+import { returnComponent, returnComponentsBatch } from '../api/returns.api.js';
 
 export default function BorrowActive() {
   const [borrowGroups, setBorrowGroups] = useState([]);
   const [filteredBorrowGroups, setFilteredBorrowGroups] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedCards, setExpandedCards] = useState(new Set());
-  const [returnModal, setReturnModal] = useState(null); // { item, borrower }
+  const [returnModal, setReturnModal] = useState(null); // { borrower, availableItems }
+  const [returnItems, setReturnItems] = useState([]); // Array of { item, quantity, returnAll, remarks }
   const [returnForm, setReturnForm] = useState({
-    quantity: '',
-    returnAll: false,
-    pic_name: '',
-    remarks: ''
+    pic_name: ''
   });
   const [returnLoading, setReturnLoading] = useState(false);
   const [returnMessage, setReturnMessage] = useState('');
@@ -37,7 +35,8 @@ export default function BorrowActive() {
             borrower: {
               name: item.borrower_name,
               tp_id: item.tp_id,
-              phone: item.phone
+              phone: item.phone,
+              email: item.email || ''
             },
             items: [],
             hasOverdue: false
@@ -95,6 +94,7 @@ export default function BorrowActive() {
       group.borrower.name.toLowerCase().includes(searchLower) ||
       group.borrower.tp_id.toLowerCase().includes(searchLower) ||
       group.borrower.phone.toLowerCase().includes(searchLower) ||
+      (group.borrower.email && group.borrower.email.toLowerCase().includes(searchLower)) ||
       group.items.some(item => 
         item.component_name.toLowerCase().includes(searchLower)
       )
@@ -116,14 +116,22 @@ export default function BorrowActive() {
     });
   };
 
-  // Open return modal
+  // Open return modal with initial item
   const handleReturnClick = (item, borrower) => {
-    setReturnModal({ item, borrower });
-    setReturnForm({
+    // Get all available items for this borrower
+    const borrowerGroup = borrowGroups.find(g => g.borrower.tp_id === borrower.tp_id);
+    const availableItems = borrowerGroup ? borrowerGroup.items.filter(i => i.remaining_quantity > 0) : [item];
+    
+    setReturnModal({ borrower, availableItems });
+    // Initialize with the clicked item
+    setReturnItems([{
+      item: item,
       quantity: '',
       returnAll: false,
-      pic_name: '',
       remarks: ''
+    }]);
+    setReturnForm({
+      pic_name: ''
     });
     setReturnMessage('');
     setReturnMessageType('');
@@ -132,33 +140,68 @@ export default function BorrowActive() {
   // Close return modal
   const handleCloseReturnModal = () => {
     setReturnModal(null);
+    setReturnItems([]);
     setReturnForm({
-      quantity: '',
-      returnAll: false,
-      pic_name: '',
-      remarks: ''
+      pic_name: ''
     });
     setReturnMessage('');
     setReturnMessageType('');
   };
-
-  // Handle return form change
-  const handleReturnFormChange = (field, value) => {
-    if (field === 'returnAll') {
-      setReturnForm(prev => ({
-        ...prev,
-        returnAll: value,
-        quantity: value ? returnModal.item.remaining_quantity : ''
-      }));
-    } else {
-      setReturnForm(prev => ({ ...prev, [field]: value }));
+  
+  // Add another item to return batch
+  const handleAddReturnItem = () => {
+    if (!returnModal) return;
+    
+    // Find first available item not already in returnItems
+    const existingItemIds = new Set(returnItems.map(ri => ri.item.component_id));
+    const availableItem = returnModal.availableItems.find(
+      item => !existingItemIds.has(item.component_id) && item.remaining_quantity > 0
+    );
+    
+    if (availableItem) {
+      setReturnItems(prev => [...prev, {
+        item: availableItem,
+        quantity: '',
+        returnAll: false,
+        remarks: ''
+      }]);
     }
   };
+  
+  // Remove item from return batch
+  const handleRemoveReturnItem = (index) => {
+    setReturnItems(prev => prev.filter((_, i) => i !== index));
+  };
+  
+  // Update return item field
+  const handleReturnItemChange = (index, field, value) => {
+    setReturnItems(prev => {
+      const updated = [...prev];
+      if (field === 'returnAll') {
+        updated[index] = {
+          ...updated[index],
+          returnAll: value,
+          quantity: value ? updated[index].item.remaining_quantity : ''
+        };
+      } else {
+        updated[index] = {
+          ...updated[index],
+          [field]: value
+        };
+      }
+      return updated;
+    });
+  };
 
-  // Handle return submit
+  // Handle return form change (for PIC name)
+  const handleReturnFormChange = (field, value) => {
+    setReturnForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Handle batch return submit
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
-    if (!returnModal) return;
+    if (!returnModal || returnItems.length === 0) return;
 
     // Validation
     if (!returnForm.pic_name.trim()) {
@@ -167,20 +210,32 @@ export default function BorrowActive() {
       return;
     }
 
-    const quantityToReturn = returnForm.returnAll 
-      ? returnModal.item.remaining_quantity 
-      : parseInt(returnForm.quantity);
+    // Validate all items
+    const batchItems = [];
+    for (let i = 0; i < returnItems.length; i++) {
+      const returnItem = returnItems[i];
+      const quantityToReturn = returnItem.returnAll 
+        ? returnItem.item.remaining_quantity 
+        : parseInt(returnItem.quantity);
 
-    if (!quantityToReturn || quantityToReturn <= 0) {
-      setReturnMessage('Please enter a valid quantity to return');
-      setReturnMessageType('error');
-      return;
-    }
+      if (!quantityToReturn || quantityToReturn <= 0) {
+        setReturnMessage(`Please enter a valid quantity for ${returnItem.item.component_name}`);
+        setReturnMessageType('error');
+        return;
+      }
 
-    if (quantityToReturn > returnModal.item.remaining_quantity) {
-      setReturnMessage(`Return quantity (${quantityToReturn}) exceeds remaining borrowed quantity (${returnModal.item.remaining_quantity})`);
-      setReturnMessageType('error');
-      return;
+      if (quantityToReturn > returnItem.item.remaining_quantity) {
+        setReturnMessage(`Return quantity (${quantityToReturn}) exceeds remaining borrowed quantity (${returnItem.item.remaining_quantity}) for ${returnItem.item.component_name}`);
+        setReturnMessageType('error');
+        return;
+      }
+
+      batchItems.push({
+        transaction_id: returnItem.item.transaction_id,
+        component_id: returnItem.item.component_id,
+        quantity: quantityToReturn,
+        remarks: returnItem.remarks.trim() || null
+      });
     }
 
     setReturnLoading(true);
@@ -188,15 +243,12 @@ export default function BorrowActive() {
     setReturnMessageType('');
 
     try {
-      await returnComponent({
-        transaction_id: returnModal.item.transaction_id,
-        component_id: returnModal.item.component_id,
-        quantity: quantityToReturn,
+      await returnComponentsBatch({
         pic_name: returnForm.pic_name.trim(),
-        remarks: returnForm.remarks.trim() || null
+        items: batchItems
       });
 
-      setReturnMessage('Return successful!');
+      setReturnMessage(`Successfully returned ${batchItems.length} item(s)!`);
       setReturnMessageType('success');
 
       // Refresh borrows list
@@ -228,7 +280,7 @@ export default function BorrowActive() {
 
       <input
         type="text"
-        placeholder="Search by name, TP ID, phone, or component"
+        placeholder="Search by name, TP ID, phone, email, or component"
         value={searchTerm}
         onChange={(e) => setSearchTerm(e.target.value)}
         className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded mb-4 text-white placeholder-zinc-400 focus:outline-none focus:border-blue-500"
@@ -259,6 +311,9 @@ export default function BorrowActive() {
                   </h3>
                   <p className="text-zinc-300 text-sm">TP ID: {group.borrower.tp_id}</p>
                   <p className="text-zinc-300 text-sm">Phone: {group.borrower.phone}</p>
+                  {group.borrower.email && (
+                    <p className="text-zinc-300 text-sm">Email: {group.borrower.email}</p>
+                  )}
                 </div>
 
                 {/* Expand/Collapse Icon */}
@@ -351,8 +406,8 @@ export default function BorrowActive() {
       {/* Return Modal */}
       {returnModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={handleCloseReturnModal}>
-          <div className="bg-zinc-800 rounded-lg p-6 w-full max-w-md mx-4 border border-zinc-700" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-2xl font-bold text-white mb-4">Return Component</h2>
+          <div className="bg-zinc-800 rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto border border-zinc-700" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-2xl font-bold text-white mb-4">Return Items</h2>
             
             {/* Borrower Info */}
             <div className="bg-zinc-900 p-3 rounded mb-4 border border-zinc-700">
@@ -362,54 +417,100 @@ export default function BorrowActive() {
               <p className="text-zinc-300 text-sm">
                 <strong>TP ID:</strong> {returnModal.borrower.tp_id}
               </p>
-            </div>
-
-            {/* Component Info */}
-            <div className="bg-zinc-900 p-3 rounded mb-4 border border-zinc-700">
-              <p className="text-white mb-1">
-                <strong>Component:</strong> {returnModal.item.component_name}
-              </p>
-              <p className="text-zinc-300 text-sm">
-                <strong>Quantity Borrowed:</strong> {returnModal.item.remaining_quantity}
-              </p>
+              {returnModal.borrower.email && (
+                <p className="text-zinc-300 text-sm">
+                  <strong>Email:</strong> {returnModal.borrower.email}
+                </p>
+              )}
             </div>
 
             <form onSubmit={handleReturnSubmit} className="space-y-4">
-              {/* Return All Option */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="returnAll"
-                  checked={returnForm.returnAll}
-                  onChange={(e) => handleReturnFormChange('returnAll', e.target.checked)}
-                  className="w-4 h-4 text-green-600 bg-zinc-700 border-zinc-600 rounded focus:ring-green-500"
-                />
-                <label htmlFor="returnAll" className="text-white cursor-pointer">
-                  Return all quantity ({returnModal.item.remaining_quantity})
-                </label>
+              {/* Return Items List */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <label className="block text-zinc-300 font-semibold">Items to Return</label>
+                  {returnItems.length < returnModal.availableItems.length && (
+                    <button
+                      type="button"
+                      onClick={handleAddReturnItem}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm transition-colors"
+                    >
+                      + Add Another Item
+                    </button>
+                  )}
+                </div>
+                
+                {returnItems.map((returnItem, index) => {
+                  const item = returnItem.item;
+                  const canRemove = returnItems.length > 1;
+                  
+                  return (
+                    <div key={index} className="bg-zinc-900 p-4 rounded border border-zinc-700">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1">
+                          <p className="text-white font-semibold mb-1">{item.component_name}</p>
+                          <p className="text-zinc-400 text-sm">Remaining: {item.remaining_quantity}</p>
+                        </div>
+                        {canRemove && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveReturnItem(index)}
+                            className="text-red-400 hover:text-red-300 text-lg font-bold"
+                            title="Remove item"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Return All Option */}
+                      <div className="flex items-center space-x-2 mb-3">
+                        <input
+                          type="checkbox"
+                          id={`returnAll-${index}`}
+                          checked={returnItem.returnAll}
+                          onChange={(e) => handleReturnItemChange(index, 'returnAll', e.target.checked)}
+                          className="w-4 h-4 text-green-600 bg-zinc-700 border-zinc-600 rounded focus:ring-green-500"
+                        />
+                        <label htmlFor={`returnAll-${index}`} className="text-white cursor-pointer text-sm">
+                          Return all ({item.remaining_quantity})
+                        </label>
+                      </div>
+
+                      {/* Quantity Input */}
+                      {!returnItem.returnAll && (
+                        <div className="mb-3">
+                          <label className="block text-zinc-300 mb-1 text-sm">Quantity to Return</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max={item.remaining_quantity}
+                            value={returnItem.quantity}
+                            onChange={(e) => handleReturnItemChange(index, 'quantity', e.target.value)}
+                            className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white"
+                            required={!returnItem.returnAll}
+                            disabled={returnItem.returnAll}
+                          />
+                        </div>
+                      )}
+
+                      {/* Remarks for this item */}
+                      <div>
+                        <label className="block text-zinc-300 mb-1 text-sm">Remarks (Optional)</label>
+                        <textarea
+                          value={returnItem.remarks}
+                          onChange={(e) => handleReturnItemChange(index, 'remarks', e.target.value)}
+                          className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white text-sm"
+                          rows="2"
+                          placeholder="Enter remarks for this item..."
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Quantity Input */}
-              {!returnForm.returnAll && (
-                <div>
-                  <label className="block text-zinc-300 mb-1">Quantity to Return</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={returnModal.item.remaining_quantity}
-                    value={returnForm.quantity}
-                    onChange={(e) => handleReturnFormChange('quantity', e.target.value)}
-                    className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white"
-                    required={!returnForm.returnAll}
-                    disabled={returnForm.returnAll}
-                  />
-                  <p className="text-zinc-400 text-xs mt-1">
-                    Maximum: {returnModal.item.remaining_quantity}
-                  </p>
-                </div>
-              )}
-
-              {/* PIC Name */}
+              {/* PIC Name (shared for all items) */}
               <div>
                 <label className="block text-zinc-300 mb-1">PIC Name <span className="text-red-400">*</span></label>
                 <input
@@ -418,20 +519,9 @@ export default function BorrowActive() {
                   onChange={(e) => handleReturnFormChange('pic_name', e.target.value)}
                   className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white"
                   required
-                  placeholder="Enter PIC name"
+                  placeholder="Enter PIC name (applies to all items)"
                 />
-              </div>
-
-              {/* Remarks */}
-              <div>
-                <label className="block text-zinc-300 mb-1">Remarks (Optional)</label>
-                <textarea
-                  value={returnForm.remarks}
-                  onChange={(e) => handleReturnFormChange('remarks', e.target.value)}
-                  className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white"
-                  rows="3"
-                  placeholder="Enter any remarks..."
-                />
+                <p className="text-zinc-400 text-xs mt-1">This PIC will be used for all items in this return</p>
               </div>
 
               {/* Error/Success Message */}

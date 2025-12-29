@@ -17,6 +17,7 @@ export default function Containers() {
   const [containers, setContainers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [qrVersion, setQrVersion] = useState(0);
   const navigate = useNavigate();
 
   const loadContainers = async () => {
@@ -56,6 +57,7 @@ export default function Containers() {
 
   const handleRegenerateQR = async () => {
     await regenerateQRCodes();
+    setQrVersion(Date.now()); // Force QR code image reload
     loadContainers();
   };
 
@@ -65,9 +67,10 @@ export default function Containers() {
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
+    const cacheBust = qrVersion || Date.now();
     const labelsHtml = filteredContainers.map(c => `
       <div style="width:8cm; height:8cm; border:1px solid black; display:flex; flex-direction:column; align-items:center; justify-content:center; margin:0.5cm; box-sizing:border-box; page-break-inside:avoid;">
-        <img src="${API_BASE}/${c.qr_path}" style="width:6cm; height:6cm; object-fit:contain;" />
+        <img src="${API_BASE}/${c.qr_path}?v=${cacheBust}" style="width:6cm; height:6cm; object-fit:contain;" />
         <div style="font-size:45; font-weight:bold; margin-top:0.5cm;">${c.code}</div>
       </div>
     `).join('');
@@ -136,12 +139,13 @@ export default function Containers() {
               className="bg-zinc-900 border border-zinc-700 rounded-lg p-3 flex flex-col items-center cursor-pointer hover:border-blue-500 transition"
             >
               <img
-                src={`${API_BASE}/${c.qr_path}`}
+                src={`${API_BASE}/${c.qr_path}${qrVersion ? `?v=${qrVersion}` : ''}`}
                 alt={`QR ${c.code}`}
                 className="w-32 h-32 object-contain bg-white p-1 rounded"
                 onError={(e) => {
                   e.currentTarget.src = "/placeholder.png";
                 }}
+                key={`${c.code}-${qrVersion}`}
               />
 
               <div className="mt-2 font-semibold text-lg">{c.code}</div>

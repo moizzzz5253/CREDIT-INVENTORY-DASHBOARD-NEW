@@ -31,7 +31,7 @@ class BorrowTransactionRead(BaseModel):
     borrowed_at: str
     expected_return_date: date
 
-    borrower: dict        # name, tp_id, phone
+    borrower: dict        # name, tp_id, phone, email
     borrowed_by: dict     # PIC name
 
     items: List[BorrowItemRead]

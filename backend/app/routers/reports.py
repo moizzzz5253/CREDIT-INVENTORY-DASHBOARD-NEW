@@ -74,7 +74,12 @@ def export_full_database(db: Session = Depends(get_db)):
         "Name",
         "Category",
         "Quantity",
+        "Storage Type",
+        "Cabinet Number",
+        "Shelf Number",
         "Container Code",
+        "Drawer Index",
+        "Storage Box Index",
         "Location Type",
         "Location Index",
         "Remarks",
@@ -91,9 +96,14 @@ def export_full_database(db: Session = Depends(get_db)):
             comp.name,
             comp.category,
             comp.quantity,
-            comp.container.code if comp.container else "N/A",
+            comp.storage_type,
+            comp.cabinet_number or "",
+            comp.shelf_number or "",
+            comp.container.code if comp.container else "",
+            comp.drawer_index or "",
+            comp.storage_box_index or "",
             comp.location_type,
-            comp.location_index,
+            comp.location_index or "",
             comp.remarks or "",
             comp.is_deleted,
             comp.created_at.strftime("%d/%m/%Y %H:%M:%S") if comp.created_at else "",
@@ -107,14 +117,19 @@ def export_full_database(db: Session = Depends(get_db)):
         'B': 30,  # Name
         'C': 25,  # Category
         'D': 12,  # Quantity
-        'E': 15,  # Container Code
-        'F': 15,  # Location Type
-        'G': 15,  # Location Index
-        'H': 35,  # Remarks
-        'I': 12,  # Is Deleted
-        'J': 20,  # Created At
-        'K': 20,  # Deleted At
-        'L': 40   # Image Path
+        'E': 15,  # Storage Type
+        'F': 15,  # Cabinet Number
+        'G': 15,  # Shelf Number
+        'H': 15,  # Container Code
+        'I': 15,  # Drawer Index
+        'J': 15,  # Storage Box Index
+        'K': 15,  # Location Type
+        'L': 15,  # Location Index
+        'M': 35,  # Remarks
+        'N': 12,  # Is Deleted
+        'O': 20,  # Created At
+        'P': 20,  # Deleted At
+        'Q': 40   # Image Path   # Image Path
     }
     for col, width in component_widths.items():
         ws_components.column_dimensions[col].width = width
@@ -123,7 +138,7 @@ def export_full_database(db: Session = Depends(get_db)):
     # Containers Sheet
     # -------------------------
     ws_containers = wb.create_sheet("Containers")
-    ws_containers.append(["ID", "Code", "Cabinet Number", "QR Path"])
+    ws_containers.append(["ID", "Code", "Cabinet Number", "Shelf Number", "QR Path"])
     
     containers = db.query(Container).order_by(Container.id).all()
     for cont in containers:
@@ -131,10 +146,11 @@ def export_full_database(db: Session = Depends(get_db)):
             cont.id,
             cont.code,
             cont.cabinet_number,
+            cont.shelf_number or "",
             cont.qr_path or ""
         ])
     
-    container_widths = {'A': 8, 'B': 15, 'C': 18, 'D': 40}
+    container_widths = {'A': 8, 'B': 15, 'C': 18, 'D': 15, 'E': 40}
     for col, width in container_widths.items():
         ws_containers.column_dimensions[col].width = width
     
@@ -177,6 +193,7 @@ def export_full_database(db: Session = Depends(get_db)):
         "Borrower Name",
         "TP ID",
         "Phone",
+        "Email",
         "PIC Name",
         "Reason",
         "Expected Return Date",
@@ -191,6 +208,7 @@ def export_full_database(db: Session = Depends(get_db)):
             tx.borrower.name if tx.borrower else "N/A",
             tx.borrower.tp_id if tx.borrower else "N/A",
             tx.borrower.phone if tx.borrower else "N/A",
+            tx.borrower.email if tx.borrower else "N/A",
             tx.borrowed_by.name if tx.borrowed_by else "N/A",
             tx.reason or "",
             tx.expected_return_date.strftime("%d/%m/%Y") if tx.expected_return_date else "",
@@ -198,7 +216,7 @@ def export_full_database(db: Session = Depends(get_db)):
             tx.borrowed_at.strftime("%d/%m/%Y %H:%M:%S") if tx.borrowed_at else ""
         ])
     
-    tx_widths = {'A': 8, 'B': 25, 'C': 15, 'D': 15, 'E': 20, 'F': 35, 'G': 20, 'H': 15, 'I': 20}
+    tx_widths = {'A': 8, 'B': 25, 'C': 15, 'D': 15, 'E': 25, 'F': 20, 'G': 35, 'H': 20, 'I': 15, 'J': 20}
     for col, width in tx_widths.items():
         ws_borrow_tx.column_dimensions[col].width = width
     
@@ -261,12 +279,12 @@ def export_components_report(db: Session = Depends(get_db)):
     # -------------------------
     # Header row
     # -------------------------
+    from app.utils.component_mapper import generate_location_label
     ws.append([
         "Component Name",
         "Category",
-        "Container",
-        "Location Type",
-        "Location Index",
+        "Storage Type",
+        "Location",
         "Total Quantity",
         "Borrowed Quantity",
         "Date Added"
@@ -280,13 +298,14 @@ def export_components_report(db: Session = Depends(get_db)):
             (item.quantity_borrowed - item.quantity_returned)
             for item in component.borrow_items
         )
+        
+        location_label = generate_location_label(component)
 
         ws.append([
             component.name,
             component.category,
-            component.container.code,
-            component.location_type,
-            component.location_index,
+            component.storage_type,
+            location_label,
             component.quantity,
             borrowed_qty,
             component.created_at.strftime("%d/%m/%Y")
@@ -298,12 +317,11 @@ def export_components_report(db: Session = Depends(get_db)):
     column_widths = {
         'A': 30,  # Component Name
         'B': 30,  # Category
-        'C': 15,  # Container
-        'D': 15,  # Location Type
-        'E': 15,  # Location Index
-        'F': 15,  # Total Quantity
-        'G': 18,  # Borrowed Quantity
-        'H': 15   # Date Added
+        'C': 15,  # Storage Type
+        'D': 50,  # Location
+        'E': 15,  # Total Quantity
+        'F': 18,  # Borrowed Quantity
+        'G': 15   # Date Added
     }
     for col, width in column_widths.items():
         ws.column_dimensions[col].width = width

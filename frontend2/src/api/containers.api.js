@@ -1,7 +1,8 @@
 import api from "./axios";
 
-export const getAllContainers = async () => {
-  const res = await api.get("/containers");
+export const getAllContainers = async (cabinetNumber = null) => {
+  const params = cabinetNumber ? { cabinet_number: cabinetNumber } : {};
+  const res = await api.get("/containers", { params });
   return res.data;
 };
 

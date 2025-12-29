@@ -5,6 +5,7 @@ def borrow_transaction_to_read(tx):
             "name": tx.borrower.name,
             "tp_id": tx.borrower.tp_id,
             "phone": tx.borrower.phone,
+            "email": tx.borrower.email,
         },
         "borrowed_by": {
             "id": tx.borrowed_by.id,

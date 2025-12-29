@@ -49,8 +49,14 @@ def initialize_containers(db: Session = Depends(get_db)):
 # LIST CONTAINERS
 # --------------------------------------------------
 @router.get("/", response_model=list[ContainerRead])
-def list_containers(db: Session = Depends(get_db)):
-    return db.query(Container).order_by(Container.code).all()
+def list_containers(
+    cabinet_number: int | None = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Container)
+    if cabinet_number is not None:
+        query = query.filter(Container.cabinet_number == cabinet_number)
+    return query.order_by(Container.code).all()
 
 
 # --------------------------------------------------

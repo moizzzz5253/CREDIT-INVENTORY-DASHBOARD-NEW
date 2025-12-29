@@ -33,6 +33,8 @@ class ComponentCreate(ComponentBase):
 class ComponentContainerInfo(BaseModel):
     id: int
     code: str
+    cabinet_number: int | None = None
+    shelf_number: int | None = None
 
     class Config:
         from_attributes = True
@@ -44,7 +46,12 @@ class ComponentRead(BaseModel):
     quantity: int
     remarks: str | None
     image_path: str
-    container: ComponentContainerInfo
+    container: ComponentContainerInfo | None
+    storage_type: str
+    cabinet_number: int | None = None
+    shelf_number: int | None = None
+    drawer_index: int | None = None
+    storage_box_index: int | None = None
     borrowed_quantity: int
     available_quantity: int
     location: ComponentLocation

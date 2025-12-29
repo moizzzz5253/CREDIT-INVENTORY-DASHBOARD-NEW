@@ -26,7 +26,7 @@ export default function ContainerCard({ container }) {
       "
     >
       <img
-        src={`${API_BASE}/${container.qr_path}`}
+        src={`${API_BASE}/${container.qr_path}?t=${Date.now()}`}
         alt={container.code}
         className="w-40 h-40 object-contain mb-2"
         onError={(e) => {

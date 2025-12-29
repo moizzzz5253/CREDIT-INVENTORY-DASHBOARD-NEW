@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -9,6 +9,20 @@ class ReturnCreate(BaseModel):
     quantity: int
     remarks: Optional[str]
     pic_name: str
+
+
+class ReturnItemCreate(BaseModel):
+    """Single item in a batch return."""
+    transaction_id: int
+    component_id: int
+    quantity: int
+    remarks: Optional[str] = None
+
+
+class BatchReturnCreate(BaseModel):
+    """Batch return request - multiple items with same PIC."""
+    pic_name: str
+    items: List[ReturnItemCreate]
 
 
 class ReturnEventRead(BaseModel):

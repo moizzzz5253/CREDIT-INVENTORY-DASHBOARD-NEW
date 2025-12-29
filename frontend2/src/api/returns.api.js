@@ -23,3 +23,13 @@ export const returnComponent = async (returnData) => {
   }
 };
 
+export const returnComponentsBatch = async (batchData) => {
+  try {
+    const response = await api.post('/returns/batch', batchData);
+    return response.data;
+  } catch (error) {
+    const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'An error occurred while processing the batch return';
+    throw new Error(errorMessage);
+  }
+};
+

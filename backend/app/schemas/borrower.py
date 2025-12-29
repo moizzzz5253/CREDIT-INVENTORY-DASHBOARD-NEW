@@ -1,9 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 class BorrowerCreate(BaseModel):
     name: str
     tp_id: str
     phone: str
+    email: EmailStr
 
 
 class BorrowerRead(BorrowerCreate):
