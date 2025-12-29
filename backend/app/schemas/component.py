@@ -55,6 +55,7 @@ class ComponentRead(BaseModel):
     borrowed_quantity: int
     available_quantity: int
     location: ComponentLocation
+    is_controlled: bool = False
     class Config:
         from_attributes = True
 

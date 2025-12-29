@@ -1,7 +1,11 @@
 import React, {useEffect, useState} from "react";
+import { useNavigate } from "react-router-dom";
 import Clock from "../components/dashboard/Clock";
 import StatCard from "../components/dashboard/StatCard";
+import PasswordPromptModal from "../components/PasswordPromptModal";
 import { getDashboardStats } from "../api/dashboard.api";
+import { verifyAdminPassword } from "../api/admin.api";
+import { User } from "lucide-react";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -10,6 +14,9 @@ export default function Dashboard() {
     overdue_borrows: 0
   });
   const [loading, setLoading] = useState(true);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const navigate = useNavigate();
     
   useEffect(() => {
     document.title = "Dashboard | CREDIT Inventory Management System";
@@ -40,6 +47,32 @@ export default function Dashboard() {
     ? { value: "No overdue", variant: "success" }
     : { value: stats.overdue_borrows, variant: "danger" };
 
+  const handleAdminClick = () => {
+    setPasswordError("");
+    setShowPasswordModal(true);
+  };
+
+  const handlePasswordVerify = async (password) => {
+    try {
+      const result = await verifyAdminPassword(password);
+      if (result.success) {
+        setShowPasswordModal(false);
+        setPasswordError("");
+        // Navigate to account settings
+        navigate("/account-settings");
+      } else {
+        setPasswordError(result.message || "Invalid password");
+      }
+    } catch (error) {
+      setPasswordError(error.response?.data?.detail || "Failed to verify password");
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowPasswordModal(false);
+    setPasswordError("");
+  };
+
   // #region agent log
   useEffect(() => {
     fetch('http://127.0.0.1:7242/ingest/d55c5050-20f8-400e-ab29-1c5521b877bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Dashboard.jsx:43',message:'Dashboard component mounted',data:{loading,stats:Object.keys(stats)},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
@@ -52,6 +85,23 @@ export default function Dashboard() {
   // #endregion
   return (
     <div className="space-y-6">
+      {/* Admin Button - Top Right */}
+      <button
+        onClick={handleAdminClick}
+        className="fixed top-4 right-4 z-50 bg-zinc-800 hover:bg-zinc-700 p-2 rounded-md text-white transition-colors flex items-center space-x-2"
+        aria-label="Admin Settings"
+      >
+        <User size={20} />
+        <span className="hidden md:inline">Admin</span>
+      </button>
+
+      {/* Password Prompt Modal */}
+      <PasswordPromptModal
+        isOpen={showPasswordModal}
+        onClose={handleCloseModal}
+        onVerify={handlePasswordVerify}
+        error={passwordError}
+      />
         {/* Clock */}
         <div className="lg:col-span-1 flex items-center justify-center h-full">
           <Clock />

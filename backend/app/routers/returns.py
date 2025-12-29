@@ -8,6 +8,7 @@ from app.database.models import BorrowItem, BorrowTransaction, ReturnEvent, Borr
 from app.utils.user_resolver import resolve_user
 from app.services.email_service import email_service
 from app.schemas.return_event import BatchReturnCreate
+from app.utils.admin_emails import get_admin_email_list
 
 router = APIRouter(prefix="/returns", tags=["Returns"])
 
@@ -86,6 +87,21 @@ def return_component(
                     returned_by=return_event.returned_by.name,
                     remarks=return_event.remarks
                 )
+                
+                # Send admin email notifications
+                admin_emails = get_admin_email_list(db)
+                if admin_emails:
+                    email_service.send_return_notification_to_admin(
+                        borrower_name=borrower.name,
+                        borrower_email=borrower.email,
+                        borrower_tp_id=borrower.tp_id,
+                        borrower_phone=borrower.phone,
+                        returned_items=returned_items,
+                        returned_at=return_event.returned_at,
+                        returned_by=return_event.returned_by.name,
+                        remarks=return_event.remarks,
+                        admin_emails=admin_emails
+                    )
     except Exception as e:
         # Log error but don't fail the transaction
         from loguru import logger
@@ -182,6 +198,8 @@ def return_components_batch(
             borrower_groups[borrower_email] = {
                 'borrower_name': borrower.name,
                 'borrower_email': borrower_email,
+                'borrower_tp_id': borrower.tp_id,
+                'borrower_phone': borrower.phone,
                 'returned_items': [],
                 'returned_at': returned_at,
                 'returned_by': pic_user.name
@@ -196,6 +214,8 @@ def return_components_batch(
     
     # Send one email per borrower
     emails_sent = 0
+    admin_emails = get_admin_email_list(db)
+    
     for borrower_email, group_data in borrower_groups.items():
         try:
             success = email_service.send_return_notification(
@@ -217,6 +237,23 @@ def return_components_batch(
                 logger.warning(f"Failed to send batch return email to {borrower_email}")
         except Exception as e:
             logger.error(f"Error sending batch return email to {borrower_email}: {e}")
+        
+        # Send admin email notifications for this borrower group
+        try:
+            if admin_emails:
+                email_service.send_return_notification_to_admin(
+                    borrower_name=group_data['borrower_name'],
+                    borrower_email=group_data['borrower_email'],
+                    borrower_tp_id=group_data['borrower_tp_id'],
+                    borrower_phone=group_data['borrower_phone'],
+                    returned_items=group_data['returned_items'],
+                    returned_at=group_data['returned_at'],
+                    returned_by=group_data['returned_by'],
+                    remarks=None,  # Individual remarks are in items
+                    admin_emails=admin_emails
+                )
+        except Exception as e:
+            logger.error(f"Error sending admin return notification email: {e}")
     
     return {
         "message": f"Batch return successful - {len(processed_returns)} item(s) returned",

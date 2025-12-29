@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { getAllContainers } from "../api/containers.api";
 import { getCategories, createComponent } from "../api/components.api";
+import { verifyAdminPassword } from "../api/admin.api";
 import StorageLocationForm from "../components/StorageLocationForm";
 
 export default function AddComponent() {
@@ -20,9 +21,13 @@ export default function AddComponent() {
     location_type: "NONE",
     location_index: null,
     image: null,
+    is_controlled: false,
   });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   useEffect(() => {
     loadMeta();
@@ -95,6 +100,53 @@ export default function AddComponent() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Prevent double submission
+    if (loading) {
+      return;
+    }
+    
+    // If controlled, show password modal first
+    if (form.is_controlled) {
+      setShowPasswordModal(true);
+      return;
+    }
+    
+    await submitComponent();
+  };
+
+  const handlePasswordSubmit = async (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (!adminPassword.trim()) {
+      setPasswordError("Password is required");
+      return;
+    }
+
+    try {
+      const result = await verifyAdminPassword(adminPassword);
+      if (result.success) {
+        setPasswordError("");
+        setShowPasswordModal(false);
+        await submitComponent(adminPassword);
+      } else {
+        setPasswordError(result.message || "Invalid password");
+      }
+    } catch (err) {
+      setPasswordError(err?.response?.data?.message || "Failed to verify password");
+    }
+  };
+
+  const submitComponent = async (password = null) => {
+    // Prevent double submission
+    if (loading) {
+      return;
+    }
+    
     setLoading(true);
     setSuccess(null);
     try {
@@ -112,6 +164,8 @@ export default function AddComponent() {
         location_type: form.location_type,
         location_index: form.location_type !== "NONE" ? form.location_index : undefined,
         image: form.image,
+        is_controlled: form.is_controlled,
+        admin_password: password || undefined,
       };
 
       const res = await createComponent(payload);
@@ -133,8 +187,11 @@ export default function AddComponent() {
         storage_box_index: null,
         location_type: "NONE", 
         location_index: null,
-        image: null 
+        image: null,
+        is_controlled: false,
       });
+      setAdminPassword("");
+      setPasswordError("");
     } catch (err) {
       console.error(err);
       alert(err?.response?.data?.detail || "Failed to create component");
@@ -196,10 +253,73 @@ export default function AddComponent() {
             <p className="text-zinc-500 text-sm mt-1">If no image is provided, a placeholder will be used.</p>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-zinc-300">Controlled Item</label>
+            <select 
+              value={form.is_controlled ? "yes" : "no"} 
+              onChange={(e) => handleChange('is_controlled', e.target.value === "yes")} 
+              className="mt-1 block w-full rounded bg-zinc-900 border border-zinc-700 p-2 text-white"
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes (Cannot be borrowed)</option>
+            </select>
+            <p className="text-zinc-500 text-sm mt-1">Controlled items cannot be borrowed and require admin authorization.</p>
+          </div>
+
           <div className="flex items-center space-x-2">
             <button disabled={loading} type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-white">Add Component</button>
           </div>
         </form>
+
+        {/* Password Modal */}
+        {showPasswordModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-zinc-800 p-6 rounded-lg border border-zinc-700 max-w-md w-full">
+              <h3 className="text-lg font-semibold text-white mb-4">Admin Password Required</h3>
+              <p className="text-zinc-300 mb-4">This component is marked as controlled. Please enter the admin password to proceed.</p>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => {
+                  setAdminPassword(e.target.value);
+                  setPasswordError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handlePasswordSubmit();
+                  }
+                }}
+                placeholder="Enter admin password"
+                className="w-full p-2 bg-zinc-900 border border-zinc-700 rounded text-white mb-2"
+                autoFocus
+              />
+              {passwordError && (
+                <p className="text-red-400 text-sm mb-2">{passwordError}</p>
+              )}
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setAdminPassword("");
+                    setPasswordError("");
+                  }}
+                  className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePasswordSubmit}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-white"
+                >
+                  Submit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {success && (
           <div className="mt-6 bg-zinc-900 border border-emerald-700 rounded p-4">

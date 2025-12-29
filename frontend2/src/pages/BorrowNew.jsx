@@ -84,13 +84,20 @@ function SearchableComponentSelect({ components, value, onChange, required }) {
                     onClick={() => handleSelect(comp.id)}
                     className={`p-3 cursor-pointer hover:bg-zinc-600 border-b border-zinc-600 ${
                       value && value.toString() === comp.id.toString() ? 'bg-zinc-600' : ''
-                    }`}
+                    } ${comp.is_controlled ? 'border-l-4 border-l-orange-500' : ''}`}
                   >
                     <div className="flex justify-between items-center">
-                      <span className="text-white font-medium">{comp.name}</span>
-                      <span className="text-zinc-400 text-sm ml-2">
-                        Available: {available}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-medium">{comp.name}</span>
+                        {comp.is_controlled && (
+                          <div className="px-3 py-1 bg-orange-600 text-white text-xs font-bold rounded inline-block">
+                            CONTROLLED
+                          </div>
+                        )}
+                      </div>
+                    <span className="text-zinc-400 text-sm ml-2">
+                      Available: {available}
+                    </span>
                     </div>
                   </div>
                 );
@@ -183,6 +190,11 @@ export default function BorrowNew() {
       }
       const comp = components.find(c => c.id == item.component_id);
       if (comp) {
+        // Check if component is controlled
+        if (comp.is_controlled) {
+          setMessage(`Component "${comp.name}" is controlled and cannot be borrowed.`);
+          return false;
+        }
         const available = (comp.available_quantity || 0);
         if (item.quantity > available) {
           setMessage(`Quantity for ${comp.name} exceeds available. Available: ${available}, Requested: ${item.quantity}`);

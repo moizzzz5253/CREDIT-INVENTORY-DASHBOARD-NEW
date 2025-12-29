@@ -6,14 +6,17 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
-from app.database.models import Component, Container, BorrowItem
+from app.database.models import Component, Container, BorrowItem, Admin, ComponentModificationHistory
 from app.schemas.component import (
     ComponentRead,
     ComponentUpdate,
     ComponentDelete,
 )
 from app.routers.constants import CATEGORIES
-from app.utils.component_mapper import component_to_read
+from app.utils.component_mapper import component_to_read, generate_location_label
+from app.core.security import verify_password, DEFAULT_ADMIN_PASSWORD
+from app.services.email_service import email_service
+from app.utils.admin_emails import get_admin_email_list
 
 router = APIRouter(
     prefix="/components",
@@ -22,6 +25,29 @@ router = APIRouter(
 
 UPLOAD_DIR = "uploads/components"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def track_component_change(
+    db: Session,
+    component_id: int,
+    field_name: str,
+    old_value: any,
+    new_value: any
+):
+    """Helper function to track component field changes"""
+    if old_value != new_value:
+        # Convert values to strings for storage
+        old_str = str(old_value) if old_value is not None else "None"
+        new_str = str(new_value) if new_value is not None else "None"
+        
+        history_entry = ComponentModificationHistory(
+            component_id=component_id,
+            field_name=field_name,
+            old_value=old_str,
+            new_value=new_str,
+            modified_at=datetime.utcnow()
+        )
+        db.add(history_entry)
 
 
 def validate_storage_location(
@@ -137,6 +163,8 @@ def create_component(
 
     remarks: str | None = Form(None),
     image: UploadFile | None = File(None),
+    is_controlled: bool = Form(False),
+    admin_password: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     # ---------------------------
@@ -174,6 +202,25 @@ def create_component(
             f.write(image.file.read())
 
     # ---------------------------
+    # Validate admin password if controlled
+    # ---------------------------
+    if is_controlled:
+        if not admin_password:
+            raise HTTPException(400, "Admin password is required for controlled components")
+        
+        # Get admin record
+        admin = db.query(Admin).first()
+        if admin is None:
+            # No admin record exists, use default password
+            if admin_password != DEFAULT_ADMIN_PASSWORD:
+                raise HTTPException(400, "Invalid admin password")
+        else:
+            # Verify password
+            is_valid = verify_password(admin_password, admin.password_hash)
+            if not is_valid:
+                raise HTTPException(400, "Invalid admin password")
+
+    # ---------------------------
     # Resolve location_type and location_index
     # ---------------------------
     resolved_location_type = location_type if location_type else "NONE"
@@ -197,6 +244,7 @@ def create_component(
         location_type=resolved_location_type,
         location_index=resolved_location_index,
         is_deleted=False,
+        is_controlled=is_controlled,
     )
     
 
@@ -205,6 +253,23 @@ def create_component(
     db.refresh(component)
     db.refresh(component, attribute_names=["container"])
     added_date = component.created_at
+    
+    # Send email notification if component is controlled
+    if is_controlled:
+        try:
+            admin_emails = get_admin_email_list(db)
+            if admin_emails:
+                email_service.send_component_added_notification(
+                    component_name=component.name,
+                    category=component.category,
+                    quantity=component.quantity,
+                    date_added=component.created_at,
+                    remarks=component.remarks,
+                    admin_emails=admin_emails
+                )
+        except Exception as e:
+            from loguru import logger
+            logger.error(f"Failed to send component added notification email: {e}")
 
     return {**component_to_read(component), "message": f"component added on {added_date}"}
 
@@ -248,6 +313,8 @@ def update_component(
     location_index: int | None = Form(None),
 
     image: UploadFile | None = File(None),
+    is_controlled: bool | None = Form(None),
+    admin_password: str | None = Form(None),
 
     db: Session = Depends(get_db),
 ):
@@ -265,6 +332,11 @@ def update_component(
 
     if not component:
         raise HTTPException(404, "Component not found")
+
+    # -------------------------------------------------
+    # Get old location label before any changes (for tracking)
+    # -------------------------------------------------
+    old_location_label = generate_location_label(component)
 
     # -------------------------------------------------
     # Borrow safety
@@ -418,14 +490,67 @@ def update_component(
         component.location_index = location_index
 
     # -------------------------------------------------
-    # Apply basic fields
+    # Track location change (after all storage fields applied)
+    # -------------------------------------------------
+    if storage_changed or location_type is not None or location_index is not None:
+        # Refresh component to get updated container relationship if container_id changed
+        # We need to flush first to ensure container_id is saved, then refresh
+        db.flush()
+        # Refresh container relationship if container_id was modified
+        if container_id is not None or storage_type is not None:
+            db.refresh(component, attribute_names=["container"])
+        
+        new_location_label = generate_location_label(component)
+        if old_location_label != new_location_label:
+            track_component_change(db, component_id, "location", old_location_label, new_location_label)
+
+    # -------------------------------------------------
+    # Handle controlled status change
+    # -------------------------------------------------
+    if is_controlled is not None:
+        # Check if controlled status is being changed
+        if is_controlled != component.is_controlled:
+            # If changing to uncontrolled, require admin password
+            if not is_controlled:  # Changing from controlled to uncontrolled
+                if not admin_password:
+                    raise HTTPException(400, "Admin password is required to change controlled status")
+                
+                # Get admin record
+                admin = db.query(Admin).first()
+                if admin is None:
+                    # No admin record exists, use default password
+                    if admin_password != DEFAULT_ADMIN_PASSWORD:
+                        raise HTTPException(400, "Invalid admin password")
+                else:
+                    # Verify password
+                    is_valid = verify_password(admin_password, admin.password_hash)
+                    if not is_valid:
+                        raise HTTPException(400, "Invalid admin password")
+            
+            # Track controlled status change
+            track_component_change(
+                db, 
+                component_id, 
+                "is_controlled", 
+                "Yes" if component.is_controlled else "No",
+                "Yes" if is_controlled else "No"
+            )
+            # Update controlled status
+            component.is_controlled = is_controlled
+
+    # -------------------------------------------------
+    # Track changes and apply basic fields
     # -------------------------------------------------
     if name is not None:
+        # Track name change
+        track_component_change(db, component_id, "name", component.name, name)
         component.name = name
 
     if category is not None:
         if category not in CATEGORIES:
             raise HTTPException(400, "Invalid category")
+        # Track category change
+        track_component_change(db, component_id, "category", component.category, category)
         component.category = category
 
     if quantity is not None:
@@ -441,9 +566,15 @@ def update_component(
                 f"Cannot set quantity to {quantity}. There are {borrowed_qty} items currently borrowed. "
                 f"Minimum quantity must be at least {borrowed_qty}."
             )
+        # Track quantity change
+        track_component_change(db, component_id, "quantity", component.quantity, quantity)
         component.quantity = quantity
 
     if remarks is not None:
+        # Track remarks change
+        old_remarks = component.remarks if component.remarks else "None"
+        new_remarks = remarks if remarks else "None"
+        track_component_change(db, component_id, "remarks", old_remarks, new_remarks)
         component.remarks = remarks
 
     # -------------------------------------------------
@@ -511,12 +642,33 @@ def delete_component(
             "Component is currently borrowed"
         )
 
+    # Capture component details before deletion for email notification
+    component_name = component.name
+    component_category = component.category
+    component_quantity = component.quantity
+    
     component.is_deleted = True
     component.deleted_reason = payload.reason
     component.updated_at =  datetime.utcnow()
     component.deleted_at =  datetime.utcnow()
 
     db.commit()
+    
+    # Send email notification for component deletion
+    try:
+        admin_emails = get_admin_email_list(db)
+        if admin_emails:
+            email_service.send_component_deleted_notification(
+                component_name=component_name,
+                category=component_category,
+                quantity=component_quantity,
+                deletion_reason=payload.reason,
+                deleted_at=component.deleted_at,
+                admin_emails=admin_emails
+            )
+    except Exception as e:
+        from loguru import logger
+        logger.error(f"Failed to send component deleted notification email: {e}")
 
     return {
         "message": "Component deleted successfully",

@@ -4,6 +4,8 @@ __pycache__/
 *.pyo
 *.pyd
 *.db
+!inventory.db
+!**/inventory.db
 *.sqlite3
 venv/
 venv2/
@@ -38,11 +40,29 @@ database_backups/
 *.backup
 *.bak
 
-# Uploads and generated files
-backend/uploads/
-backend/qr_codes/
-**/uploads/
-**/qr_codes/
+# Uploads and generated files - ignore contents but keep folders
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/qr_codes/*
+!backend/qr_codes/.gitkeep
+**/uploads/*
+!**/uploads/.gitkeep
+**/qr_codes/*
+!**/qr_codes/.gitkeep
+
+# Image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.webp
+*.ico
+!**/public/**/*.png
+!**/public/**/*.jpg
+!**/public/**/*.jpeg
+!**/public/**/*.gif
+!**/public/**/*.svg
 
 # Temporary files
 *.tmp

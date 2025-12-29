@@ -9,7 +9,9 @@ import BorrowNew from "../pages/BorrowNew";
 import BorrowActive from "../pages/BorrowActive";
 import History from "../pages/History";
 import SystemManager from "../pages/SystemManager";
+import AccountSettings from "../pages/AccountSettings";
 import DashboardLayout from "../layouts/DashboardLayout";
+import ProtectedRoute from "../components/ProtectedRoute";
 
 export default function AppRouter() {
   // #region agent log
@@ -35,7 +37,15 @@ export default function AppRouter() {
         <Route path="/borrow/new" element={<BorrowNew />} />
         <Route path="/borrow/active" element={<BorrowActive />} />
         <Route path="/history" element={<History />} />
-        <Route path="/system-manager" element={<SystemManager />} />
+        <Route
+          path="/system-manager"
+          element={
+            <ProtectedRoute>
+              <SystemManager />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/account-settings" element={<AccountSettings />} />
       </Routes>
     </DashboardLayout>
    </BrowserRouter>

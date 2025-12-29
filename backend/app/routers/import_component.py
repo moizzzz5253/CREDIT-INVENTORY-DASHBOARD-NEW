@@ -9,6 +9,9 @@ from datetime import datetime
 from app.database.db import get_db
 from app.database.models import Component, Container
 from app.routers.constants import CATEGORIES
+from app.services.email_service import email_service
+from app.utils.admin_emails import get_admin_email_list
+from loguru import logger
 
 router = APIRouter(
     prefix="/import",
@@ -38,7 +41,7 @@ def download_import_template(db: Session = Depends(get_db)):
     
     # Set column headers
     headers = ['name', 'category', 'quantity', 'storage_type', 'cabinet_number', 'shelf_number', 
-               'container_code', 'drawer_index', 'storage_box_index', 'location_type', 'location_index', 'remarks']
+               'container_code', 'drawer_index', 'storage_box_index', 'location_type', 'location_index', 'remarks', 'is_controlled']
     ws.append(headers)
     
     # Set column widths
@@ -61,13 +64,13 @@ def download_import_template(db: Session = Depends(get_db)):
     
     # Add example data rows
     ws.append(['Example Component 1', 'Microcontrollers', 5, 'CABINET', 1, 2, 
-               container_codes[0] if container_codes else 'A1', '', '', 'BOX', 1, 'Sample remarks'])
+               container_codes[0] if container_codes else 'A1', '', '', 'BOX', 1, 'Sample remarks', 'No'])
     ws.append(['Example Component 2', 'Sensors and tranducers', 10, 'CABINET', 1, 0, 
-               '', '', '', 'NONE', '', 'Bare on shelf'])
+               '', '', '', 'NONE', '', 'Bare on shelf', 'No'])
     ws.append(['Example Component 3', 'Hardware accessories', 2, 'DRAWER', '', '', 
-               '', 1, '', 'BOX', 2, 'In drawer box'])
+               '', 1, '', 'BOX', 2, 'In drawer box', 'No'])
     ws.append(['Example Component 4', 'Tools', 5, 'STORAGE_BOX', '', '', 
-               '', '', 1, 'NONE', '', 'In storage box'])
+               '', '', 1, 'NONE', '', 'In storage box', 'Yes'])
     
     # Data validation for category (Column B, starting from row 2)
     category_validation = DataValidation(
@@ -286,6 +289,12 @@ def validate_excel_import(
             if storage_type == "STORAGE_BOX" and location_type != "NONE":
                 raise ValueError("STORAGE_BOX cannot have BOX or PARTITION location_type")
 
+            # Extract is_controlled field
+            is_controlled = False
+            if "is_controlled" in df.columns and not pd.isna(row["is_controlled"]):
+                controlled_val = str(row["is_controlled"]).strip().upper()
+                is_controlled = controlled_val in ["YES", "TRUE", "1", "Y"]
+
             components_to_import.append({
                 "index": idx,
                 "row_index": idx + 2,
@@ -300,7 +309,8 @@ def validate_excel_import(
                 "storage_box_index": storage_box_index,
                 "location_type": location_type,
                 "location_index": location_index,
-                "remarks": remarks
+                "remarks": remarks,
+                "is_controlled": is_controlled
             })
 
         except Exception as e:
@@ -327,9 +337,12 @@ def finalize_component_import(
         components = json.loads(components_json)
         
         created_components = []
+        controlled_component_ids = []  # Track IDs of controlled components for email notification
         placeholder_path = os.path.join(UPLOAD_DIR, "placeholder.svg")
         
         for comp_data in components:
+            is_controlled = comp_data.get("is_controlled", False)
+            
             # Create component with placeholder image initially
             component = Component(
                 name=comp_data["name"],
@@ -345,7 +358,8 @@ def finalize_component_import(
                 storage_box_index=comp_data.get("storage_box_index"),
                 location_type=comp_data["location_type"],
                 location_index=comp_data.get("location_index"),
-                is_deleted=False
+                is_deleted=False,
+                is_controlled=is_controlled
             )
             
             db.add(component)
@@ -355,8 +369,37 @@ def finalize_component_import(
                 "id": component.id,
                 "index": comp_data.get("index", len(created_components))  # Map back to original index
             })
+            
+            # Track controlled component IDs for email notification
+            if is_controlled:
+                controlled_component_ids.append(component.id)
         
         db.commit()
+        
+        # Send email notification for controlled components
+        if controlled_component_ids:
+            try:
+                # Query controlled components to get their details including created_at
+                controlled_comps = db.query(Component).filter(Component.id.in_(controlled_component_ids)).all()
+                controlled_components_data = []
+                
+                for comp in controlled_comps:
+                    controlled_components_data.append({
+                        "name": comp.name,
+                        "category": comp.category,
+                        "quantity": comp.quantity,
+                        "remarks": comp.remarks,
+                        "date_added": comp.created_at
+                    })
+                
+                admin_emails = get_admin_email_list(db)
+                if admin_emails:
+                    email_service.send_controlled_components_batch_summary(
+                        components=controlled_components_data,
+                        admin_emails=admin_emails
+                    )
+            except Exception as e:
+                logger.error(f"Failed to send controlled components batch summary email: {e}")
         
         return {
             "inserted": len(created_components),

@@ -35,6 +35,7 @@ xlsxwriter
 # Authentication & Security (future ready)
 # -------------------------------
 passlib[bcrypt]
+bcrypt<4.0.0  # Pin bcrypt to avoid compatibility issues with passlib
 python-jose[cryptography]
 
 # -------------------------------

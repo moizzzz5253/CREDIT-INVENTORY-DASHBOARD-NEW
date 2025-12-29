@@ -113,6 +113,7 @@ def component_to_read(component):
         "location": location,
         "borrowed_quantity": borrowed_qty,
         "available_quantity": component.quantity - borrowed_qty,
+        "is_controlled": getattr(component, 'is_controlled', False),
         "created_at": component.created_at,
         "deleted_at": component.deleted_at,
     }

@@ -8,6 +8,7 @@ from app.schemas.borrow import BorrowCreate, BorrowTransactionRead
 from app.utils.user_resolver import resolve_user
 from app.utils.borrow_mapper import borrow_transaction_to_read
 from app.services.email_service import email_service
+from app.utils.admin_emails import get_admin_email_list
 
 router = APIRouter(prefix="/borrow", tags=["Borrow"])
 
@@ -46,6 +47,13 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
 
         if not component:
             raise HTTPException(400, "Invalid component")
+        
+        # Check if component is controlled
+        if component.is_controlled:
+            raise HTTPException(
+                400,
+                f"Component '{component.name}' is controlled and cannot be borrowed"
+            )
         
         # Calculate available quantity: total - borrowed
         borrowed_qty = sum(
@@ -98,6 +106,22 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
                 reason=tx.reason,
                 borrowed_at=tx.borrowed_at,
                 pic_name=pic_user.name
+            )
+        
+        # Send admin email notifications
+        admin_emails = get_admin_email_list(db)
+        if admin_emails and email_items:
+            email_service.send_borrow_notification_to_admin(
+                borrower_name=borrower.name,
+                borrower_email=borrower.email,
+                borrower_tp_id=borrower.tp_id,
+                borrower_phone=borrower.phone,
+                items=email_items,
+                expected_return_date=tx.expected_return_date,
+                reason=tx.reason,
+                borrowed_at=tx.borrowed_at,
+                pic_name=pic_user.name,
+                admin_emails=admin_emails
             )
     except Exception as e:
         # Log error but don't fail the transaction

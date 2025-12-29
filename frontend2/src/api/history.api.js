@@ -18,3 +18,21 @@ export const getDeletedComponentsHistory = async () => {
   }
 };
 
+export const getAddedComponentsHistory = async () => {
+  try {
+    const response = await api.get('/history/added-components/');
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export const getModifiedComponentsHistory = async () => {
+  try {
+    const response = await api.get('/history/modified-components/');
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+};
+

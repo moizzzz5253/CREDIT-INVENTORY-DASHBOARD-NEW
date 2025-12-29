@@ -21,7 +21,8 @@ from app.routers import (
     history_deleted,
     reports,
     import_component,
-    database_manager
+    database_manager,
+    admin
 )
 from app.routers import constants_router
 from app.routers import email_admin
@@ -78,6 +79,7 @@ app.include_router(reports.router)
 app.include_router(database_manager.router)
 app.include_router(constants_router.router)
 app.include_router(email_admin.router)
+app.include_router(admin.router)
 
 
 # -----------------------------app.include_router(reports.router)

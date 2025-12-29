@@ -8,6 +8,22 @@ import enum
 
 
 # --------------------------------------------------
+# ADMIN
+# --------------------------------------------------
+class Admin(Base):
+    __tablename__ = "admin"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    email2 = Column(String, nullable=True)  # Second email for sending emails
+    phone = Column(String, nullable=True)
+    password_hash = Column(String, nullable=True)  # NULL means using hardcoded password
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# --------------------------------------------------
 # USER (PIC)
 # --------------------------------------------------
 class User(Base):
@@ -84,6 +100,7 @@ class Component(Base):
     is_deleted = Column(Boolean, default=False)
     deleted_reason = Column(String)
     deleted_at = Column(DateTime)
+    is_controlled = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow,nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -201,3 +218,20 @@ class ReturnEvent(Base):
         "User",
         back_populates="return_events"
     )
+
+
+# --------------------------------------------------
+# COMPONENT MODIFICATION HISTORY
+# --------------------------------------------------
+class ComponentModificationHistory(Base):
+    __tablename__ = "component_modification_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    component_id = Column(Integer, ForeignKey("components.id"), nullable=False, index=True)
+    field_name = Column(String(50), nullable=False)  # e.g., "quantity", "category", "is_controlled"
+    old_value = Column(String(500), nullable=True)  # Store as string for flexibility
+    new_value = Column(String(500), nullable=True)
+    modified_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    component = relationship("Component")

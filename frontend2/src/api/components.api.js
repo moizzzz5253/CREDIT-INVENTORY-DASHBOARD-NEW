@@ -35,6 +35,8 @@ export const createComponent = async (payload) => {
   
   if (payload.remarks) form.append("remarks", payload.remarks);
   if (payload.image) form.append("image", payload.image);
+  if (payload.is_controlled !== undefined) form.append("is_controlled", payload.is_controlled);
+  if (payload.admin_password) form.append("admin_password", payload.admin_password);
 
   const res = await api.post("/components/", form, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -76,6 +78,8 @@ export const updateComponent = async (id, payload) => {
   
   if (payload.remarks !== undefined) form.append("remarks", payload.remarks);
   if (payload.image) form.append("image", payload.image);
+  if (payload.is_controlled !== undefined) form.append("is_controlled", payload.is_controlled);
+  if (payload.admin_password) form.append("admin_password", payload.admin_password);
 
   const res = await api.put(`/components/${id}`, form, {
     headers: { "Content-Type": "multipart/form-data" },

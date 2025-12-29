@@ -576,6 +576,613 @@ This email will never request personal or financial information. If you receive 
         """
         
         return self._send_email(borrower_email, subject, html_body, text_body)
+    
+    def _send_email_to_multiple_recipients(
+        self, 
+        recipient_emails: List[str], 
+        subject: str, 
+        html_body: str, 
+        text_body: Optional[str] = None
+    ) -> int:
+        """
+        Send the same email content to multiple recipients.
+        Returns the number of successfully sent emails.
+        """
+        success_count = 0
+        for email in recipient_emails:
+            if self._send_email(email, subject, html_body, text_body):
+                success_count += 1
+        return success_count
+    
+    def send_component_added_notification(
+        self,
+        component_name: str,
+        category: str,
+        quantity: int,
+        date_added: datetime,
+        remarks: Optional[str] = None,
+        admin_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send notification when a controlled component is added.
+        Sends separate emails to each admin email address.
+        """
+        if not admin_emails:
+            logger.warning("No admin emails provided for component added notification")
+            return False
+        
+        subject = f"New Controlled Component Added - {component_name}"
+        date_added_str = format_datetime_kl(date_added, '%B %d, %Y at %I:%M %p')
+        
+        remarks_section = ""
+        remarks_text = ""
+        if remarks:
+            remarks_section = f"""
+            <div class="info-box">
+                <p><strong>Remarks:</strong> {remarks}</p>
+            </div>
+            """
+            remarks_text = f"\nRemarks: {remarks}"
+        
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9f9f9; padding: 20px; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #4CAF50; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+                th {{ background-color: #4CAF50; color: white; padding: 10px; text-align: left; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>New Controlled Component Added</h2>
+                </div>
+                <div class="content">
+                    <p>A new controlled component has been added to the CREDIT Inventory System:</p>
+                    
+                    <div class="info-box">
+                        <p><strong>Component Details:</strong></p>
+                        <ul>
+                            <li><strong>Name:</strong> {component_name}</li>
+                            <li><strong>Category:</strong> {category}</li>
+                            <li><strong>Quantity:</strong> {quantity}</li>
+                            <li><strong>Date Added:</strong> {date_added_str}</li>
+                        </ul>
+                    </div>
+                    {remarks_section}
+                    
+                    <p style="margin-top: 20px; padding: 15px; background-color: #f0f0f0; border-left: 4px solid #4CAF50; border-radius: 4px;">
+                        <strong>Important Notice:</strong><br>
+                        This is an automated, non-replyable email from the CREDIT Inventory Management System.<br>
+                        For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.<br>
+                        This email serves as an official record and may be used for verification purposes.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p style="font-size: 11px; color: #999;">CREDIT Inventory Management System - Automated Notification</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_body = f"""
+New Controlled Component Added - CREDIT Inventory System
+
+A new controlled component has been added to the CREDIT Inventory System:
+
+Component Details:
+- Name: {component_name}
+- Category: {category}
+- Quantity: {quantity}
+- Date Added: {date_added_str}{remarks_text}
+
+---
+IMPORTANT NOTICE:
+This is an automated, non-replyable email from the CREDIT Inventory Management System.
+For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.
+This email serves as an official record and may be used for verification purposes.
+        """
+        
+        success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
+        return success_count > 0
+    
+    def send_component_deleted_notification(
+        self,
+        component_name: str,
+        category: str,
+        quantity: int,
+        deletion_reason: str,
+        deleted_at: datetime,
+        admin_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send notification when a component is deleted.
+        Sends separate emails to each admin email address.
+        """
+        if not admin_emails:
+            logger.warning("No admin emails provided for component deleted notification")
+            return False
+        
+        subject = f"Component Deleted - {component_name}"
+        deleted_at_str = format_datetime_kl(deleted_at, '%B %d, %Y at %I:%M %p')
+        
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #f44336; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9f9f9; padding: 20px; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #f44336; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Component Deleted</h2>
+                </div>
+                <div class="content">
+                    <p>A component has been deleted from the CREDIT Inventory System:</p>
+                    
+                    <div class="info-box">
+                        <p><strong>Component Details:</strong></p>
+                        <ul>
+                            <li><strong>Name:</strong> {component_name}</li>
+                            <li><strong>Category:</strong> {category}</li>
+                            <li><strong>Quantity:</strong> {quantity}</li>
+                            <li><strong>Deleted At:</strong> {deleted_at_str}</li>
+                            <li><strong>Deletion Reason:</strong> {deletion_reason}</li>
+                        </ul>
+                    </div>
+                    
+                    <p style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #f44336; border-radius: 4px;">
+                        <strong>Important Notice:</strong><br>
+                        This is an automated, non-replyable email from the CREDIT Inventory Management System.<br>
+                        For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.<br>
+                        This email serves as an official record and may be used for verification purposes.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p style="font-size: 11px; color: #999;">CREDIT Inventory Management System - Automated Notification</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_body = f"""
+Component Deleted - CREDIT Inventory System
+
+A component has been deleted from the CREDIT Inventory System:
+
+Component Details:
+- Name: {component_name}
+- Category: {category}
+- Quantity: {quantity}
+- Deleted At: {deleted_at_str}
+- Deletion Reason: {deletion_reason}
+
+---
+IMPORTANT NOTICE:
+This is an automated, non-replyable email from the CREDIT Inventory Management System.
+For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.
+This email serves as an official record and may be used for verification purposes.
+        """
+        
+        success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
+        return success_count > 0
+    
+    def send_controlled_components_batch_summary(
+        self,
+        components: List[Dict[str, any]],
+        admin_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send summary email when controlled components are added in batch (e.g., Excel import).
+        Sends separate emails to each admin email address.
+        """
+        if not admin_emails:
+            logger.warning("No admin emails provided for batch component summary notification")
+            return False
+        
+        if not components:
+            return False
+        
+        subject = f"Batch Import: {len(components)} Controlled Component{'s' if len(components) != 1 else ''} Added"
+        
+        # Build components list HTML
+        components_html = ""
+        for comp in components:
+            remarks_cell = f'<td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em; color: #666;">{comp.get("remarks", "-")}</td>' if comp.get("remarks") else '<td style="padding: 8px; border: 1px solid #ddd; color: #999;">-</td>'
+            
+            components_html += f"""
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;">{comp.get("name", "N/A")}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">{comp.get("category", "N/A")}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{comp.get("quantity", 0)}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">{format_datetime_kl(comp.get("date_added"), '%B %d, %Y at %I:%M %p')}</td>
+                {remarks_cell}
+            </tr>
+            """
+        
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9f9f9; padding: 20px; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #4CAF50; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+                th {{ background-color: #4CAF50; color: white; padding: 10px; text-align: left; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Batch Import: Controlled Components Added</h2>
+                </div>
+                <div class="content">
+                    <p>The following controlled components have been added to the CREDIT Inventory System via batch import:</p>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Component Name</th>
+                                <th>Category</th>
+                                <th>Quantity</th>
+                                <th>Date Added</th>
+                                <th>Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {components_html}
+                        </tbody>
+                    </table>
+                    
+                    <div class="info-box">
+                        <p><strong>Total Components Added:</strong> {len(components)}</p>
+                    </div>
+                    
+                    <p style="margin-top: 20px; padding: 15px; background-color: #f0f0f0; border-left: 4px solid #4CAF50; border-radius: 4px;">
+                        <strong>Important Notice:</strong><br>
+                        This is an automated, non-replyable email from the CREDIT Inventory Management System.<br>
+                        For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.<br>
+                        This email serves as an official record and may be used for verification purposes.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p style="font-size: 11px; color: #999;">CREDIT Inventory Management System - Automated Notification</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Build text body
+        text_items = []
+        for comp in components:
+            item_text = f"- {comp.get('name', 'N/A')} ({comp.get('category', 'N/A')}): {comp.get('quantity', 0)}"
+            if comp.get('remarks'):
+                item_text += f" - Remarks: {comp.get('remarks')}"
+            text_items.append(item_text)
+        
+        text_body = f"""
+Batch Import: {len(components)} Controlled Component{'s' if len(components) != 1 else ''} Added - CREDIT Inventory System
+
+The following controlled components have been added to the CREDIT Inventory System via batch import:
+
+{chr(10).join(text_items)}
+
+Total Components Added: {len(components)}
+
+---
+IMPORTANT NOTICE:
+This is an automated, non-replyable email from the CREDIT Inventory Management System.
+For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.
+This email serves as an official record and may be used for verification purposes.
+        """
+        
+        success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
+        return success_count > 0
+    
+    def send_borrow_notification_to_admin(
+        self,
+        borrower_name: str,
+        borrower_email: str,
+        borrower_tp_id: str,
+        borrower_phone: str,
+        items: List[Dict[str, any]],
+        expected_return_date: date,
+        reason: str,
+        borrowed_at: datetime,
+        pic_name: str,
+        admin_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send admin notification when items are borrowed.
+        Same structure as borrower email but includes borrower information.
+        Sends separate emails to each admin email address.
+        """
+        if not admin_emails:
+            logger.warning("No admin emails provided for admin borrow notification")
+            return False
+        
+        subject = "Admin Notification: Items Borrowed - CREDIT Inventory System"
+        
+        # Build items list HTML
+        items_html = ""
+        for item in items:
+            items_html += f"""
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;">{item['component_name']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">{item['category']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{item['quantity']}</td>
+            </tr>
+            """
+        
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #4CAF50; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9f9f9; padding: 20px; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #4CAF50; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+                th {{ background-color: #4CAF50; color: white; padding: 10px; text-align: left; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Items Borrowed - Admin Notification</h2>
+                </div>
+                <div class="content">
+                    <p>The following items have been borrowed from the CREDIT Inventory System:</p>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Component Name</th>
+                                <th>Category</th>
+                                <th>Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {items_html}
+                        </tbody>
+                    </table>
+                    
+                    <div class="info-box">
+                        <p><strong>Borrower Information:</strong></p>
+                        <ul>
+                            <li><strong>Name:</strong> {borrower_name}</li>
+                            <li><strong>Email:</strong> {borrower_email}</li>
+                            <li><strong>TP ID:</strong> {borrower_tp_id}</li>
+                            <li><strong>Phone:</strong> {borrower_phone}</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="info-box">
+                        <p><strong>Borrow Details:</strong></p>
+                        <ul>
+                            <li><strong>Expected Return Date:</strong> {expected_return_date.strftime('%B %d, %Y')}</li>
+                            <li><strong>Borrowed At:</strong> {format_datetime_kl(borrowed_at)}</li>
+                            <li><strong>Reason:</strong> {reason}</li>
+                            <li><strong>Processed By:</strong> {pic_name}</li>
+                        </ul>
+                    </div>
+                    
+                    <p style="margin-top: 20px; padding: 15px; background-color: #f0f0f0; border-left: 4px solid #4CAF50; border-radius: 4px;">
+                        <strong>Important Notice:</strong><br>
+                        This is an automated, non-replyable email from the CREDIT Inventory Management System.<br>
+                        For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.<br>
+                        This email serves as an official record and may be used for verification purposes.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p style="font-size: 11px; color: #999;">CREDIT Inventory Management System - Automated Notification</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        text_body = f"""
+Admin Notification: Items Borrowed - CREDIT Inventory System
+
+The following items have been borrowed from the CREDIT Inventory System:
+
+{chr(10).join([f"- {item['component_name']} ({item['category']}): {item['quantity']}" for item in items])}
+
+Borrower Information:
+- Name: {borrower_name}
+- Email: {borrower_email}
+- TP ID: {borrower_tp_id}
+- Phone: {borrower_phone}
+
+Borrow Details:
+- Expected Return Date: {expected_return_date.strftime('%B %d, %Y')}
+- Borrowed At: {format_datetime_kl(borrowed_at)}
+- Reason: {reason}
+- Processed By: {pic_name}
+
+---
+IMPORTANT NOTICE:
+This is an automated, non-replyable email from the CREDIT Inventory Management System.
+For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.
+This email serves as an official record and may be used for verification purposes.
+        """
+        
+        success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
+        return success_count > 0
+    
+    def send_return_notification_to_admin(
+        self,
+        borrower_name: str,
+        borrower_email: str,
+        borrower_tp_id: str,
+        borrower_phone: str,
+        returned_items: List[Dict[str, any]],
+        returned_at: datetime,
+        returned_by: str,
+        remarks: Optional[str] = None,
+        admin_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send admin notification when items are returned.
+        Same structure as borrower email but includes borrower information.
+        Sends separate emails to each admin email address.
+        """
+        if not admin_emails:
+            logger.warning("No admin emails provided for admin return notification")
+            return False
+        
+        subject = "Admin Notification: Items Returned - CREDIT Inventory System"
+        
+        # Build items list HTML with optional remarks per item
+        items_html = ""
+        for item in returned_items:
+            item_remarks = item.get('remarks', None)
+            remarks_cell = f'<td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em; color: #666;">{item_remarks}</td>' if item_remarks else '<td style="padding: 8px; border: 1px solid #ddd; color: #999;">-</td>'
+            
+            items_html += f"""
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;">{item['component_name']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">{item['category']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{item['quantity']}</td>
+                {remarks_cell}
+            </tr>
+            """
+        
+        # Show general remarks if provided (for backward compatibility)
+        remarks_section = f"""
+        <div class="info-box">
+            <p><strong>General Remarks:</strong> {remarks}</p>
+        </div>
+        """ if remarks and not any(item.get('remarks') for item in returned_items) else ""
+        
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #2196F3; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9f9f9; padding: 20px; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #2196F3; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+                th {{ background-color: #2196F3; color: white; padding: 10px; text-align: left; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Items Returned - Admin Notification</h2>
+                </div>
+                <div class="content">
+                    <p>The following items have been returned to the CREDIT Inventory System:</p>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Component Name</th>
+                                <th>Category</th>
+                                <th>Quantity Returned</th>
+                                <th>Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {items_html}
+                        </tbody>
+                    </table>
+                    
+                    <div class="info-box">
+                        <p><strong>Borrower Information:</strong></p>
+                        <ul>
+                            <li><strong>Name:</strong> {borrower_name}</li>
+                            <li><strong>Email:</strong> {borrower_email}</li>
+                            <li><strong>TP ID:</strong> {borrower_tp_id}</li>
+                            <li><strong>Phone:</strong> {borrower_phone}</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="info-box">
+                        <p><strong>Return Details:</strong></p>
+                        <ul>
+                            <li><strong>Returned At:</strong> {format_datetime_kl(returned_at)}</li>
+                            <li><strong>Processed By:</strong> {returned_by}</li>
+                        </ul>
+                    </div>
+                    {remarks_section}
+                </div>
+                <div class="footer">
+                    <p><strong>Important Notice:</strong></p>
+                    <p>This is an automated, non-replyable email from the CREDIT Inventory Management System.</p>
+                    <p>For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.</p>
+                    <p>This email serves as an official record and may be used for verification purposes.</p>
+                    <p style="margin-top: 15px; font-size: 11px; color: #999;">This email will never request personal or financial information. If you receive such requests, please report to CREDIT Centre immediately.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Build text body with remarks
+        text_items = []
+        for item in returned_items:
+            item_text = f"- {item['component_name']} ({item['category']}): {item['quantity']}"
+            if item.get('remarks'):
+                item_text += f" - Remarks: {item['remarks']}"
+            text_items.append(item_text)
+        
+        text_body = f"""
+Admin Notification: Items Returned - CREDIT Inventory System
+
+The following items have been returned to the CREDIT Inventory System:
+
+{chr(10).join(text_items)}
+
+Borrower Information:
+- Name: {borrower_name}
+- Email: {borrower_email}
+- TP ID: {borrower_tp_id}
+- Phone: {borrower_phone}
+
+Return Details:
+- Returned At: {format_datetime_kl(returned_at)}
+- Processed By: {returned_by}
+{f"- Remarks: {remarks}" if remarks else ""}
+
+---
+IMPORTANT NOTICE:
+This is an automated, non-replyable email from the CREDIT Inventory Management System.
+For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.
+This email serves as an official record and may be used for verification purposes.
+        """
+        
+        success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
+        return success_count > 0
 
 
 # Global email service instance

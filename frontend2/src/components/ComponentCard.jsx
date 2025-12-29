@@ -49,6 +49,11 @@ export default function ComponentCard({ component, onModify, onDelete, onView })
           </h4>
 
           <p className="text-zinc-400">{component.category}</p>
+          {component.is_controlled && (
+            <div className="mb-2 px-3 py-1 bg-orange-600 text-white text-xs font-bold rounded inline-block">
+              CONTROLLED
+            </div>
+          )}
           <p className="text-zinc-300">Qty: {component.quantity}</p>
           <p className="text-zinc-300">
             Borrowed: {component.borrowed_quantity}

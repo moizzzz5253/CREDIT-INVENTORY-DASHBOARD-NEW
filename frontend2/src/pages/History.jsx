@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { getReturnHistory, getDeletedComponentsHistory } from '../api/history.api.js';
+import { getReturnHistory, getDeletedComponentsHistory, getAddedComponentsHistory, getModifiedComponentsHistory } from '../api/history.api.js';
 import { getCategories } from '../api/components.api.js';
 
 export default function History() {
-  const [activeTab, setActiveTab] = useState('returned'); // 'returned' or 'deleted'
+  const [activeTab, setActiveTab] = useState('returned'); // 'returned', 'deleted', 'added', or 'modified'
   const [history, setHistory] = useState([]);
   const [filteredHistory, setFilteredHistory] = useState([]);
   const [deletedComponents, setDeletedComponents] = useState([]);
   const [filteredDeletedComponents, setFilteredDeletedComponents] = useState([]);
+  const [addedComponents, setAddedComponents] = useState([]);
+  const [filteredAddedComponents, setFilteredAddedComponents] = useState([]);
+  const [modifiedComponents, setModifiedComponents] = useState([]);
+  const [filteredModifiedComponents, setFilteredModifiedComponents] = useState([]);
   const [categories, setCategories] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -33,6 +37,20 @@ export default function History() {
             getCategories()
           ]);
           setDeletedComponents(deletedData);
+          setCategories(categoriesData);
+        } else if (activeTab === 'added') {
+          const [addedData, categoriesData] = await Promise.all([
+            getAddedComponentsHistory(),
+            getCategories()
+          ]);
+          setAddedComponents(addedData);
+          setCategories(categoriesData);
+        } else if (activeTab === 'modified') {
+          const [modifiedData, categoriesData] = await Promise.all([
+            getModifiedComponentsHistory(),
+            getCategories()
+          ]);
+          setModifiedComponents(modifiedData);
           setCategories(categoriesData);
         }
       } catch (error) {
@@ -144,6 +162,100 @@ export default function History() {
     setFilteredDeletedComponents(filtered);
   }, [deletedComponents, searchTerm, selectedCategory, dateFilter, activeTab]);
 
+  // Filter added components based on search, category, and date
+  useEffect(() => {
+    if (activeTab !== 'added') return;
+
+    let filtered = [...addedComponents];
+
+    // Search filter (search by component name)
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(item =>
+        item.component_name.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Category filter
+    if (selectedCategory) {
+      filtered = filtered.filter(item => item.category === selectedCategory);
+    }
+
+    // Date filter (based on date_added)
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      let cutoffDate = new Date();
+
+      switch (dateFilter) {
+        case '1month':
+          cutoffDate.setMonth(now.getMonth() - 1);
+          break;
+        case '6months':
+          cutoffDate.setMonth(now.getMonth() - 6);
+          break;
+        case '1year':
+          cutoffDate.setFullYear(now.getFullYear() - 1);
+          break;
+        default:
+          break;
+      }
+
+      filtered = filtered.filter(item => {
+        if (!item.date_added) return false;
+        const addedDate = new Date(item.date_added);
+        return addedDate >= cutoffDate;
+      });
+    }
+
+    setFilteredAddedComponents(filtered);
+  }, [addedComponents, searchTerm, selectedCategory, dateFilter, activeTab]);
+
+  // Filter modified components based on search and date
+  useEffect(() => {
+    if (activeTab !== 'modified') return;
+
+    let filtered = [...modifiedComponents];
+
+    // Search filter (search by component name)
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(item =>
+        item.component_name.toLowerCase().includes(searchLower) ||
+        item.changes.some(change => 
+          change.display.toLowerCase().includes(searchLower)
+        )
+      );
+    }
+
+    // Date filter (based on modified_at)
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      let cutoffDate = new Date();
+
+      switch (dateFilter) {
+        case '1month':
+          cutoffDate.setMonth(now.getMonth() - 1);
+          break;
+        case '6months':
+          cutoffDate.setMonth(now.getMonth() - 6);
+          break;
+        case '1year':
+          cutoffDate.setFullYear(now.getFullYear() - 1);
+          break;
+        default:
+          break;
+      }
+
+      filtered = filtered.filter(item => {
+        if (!item.modified_at) return false;
+        const modifiedDate = new Date(item.modified_at);
+        return modifiedDate >= cutoffDate;
+      });
+    }
+
+    setFilteredModifiedComponents(filtered);
+  }, [modifiedComponents, searchTerm, dateFilter, activeTab]);
+
   // Toggle card expansion
   const toggleCard = (uniqueKey) => {
     setExpandedCards(prev => {
@@ -233,6 +345,36 @@ export default function History() {
           }`}
         >
           Deleted Items
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('added');
+            setSearchTerm('');
+            setSelectedCategory('');
+            setDateFilter('all');
+          }}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === 'added'
+              ? 'text-white border-b-2 border-blue-500'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          Added Components
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('modified');
+            setSearchTerm('');
+            setSelectedCategory('');
+            setDateFilter('all');
+          }}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === 'modified'
+              ? 'text-white border-b-2 border-blue-500'
+              : 'text-zinc-400 hover:text-white'
+          }`}
+        >
+          Modified Components
         </button>
       </div>
 
@@ -486,6 +628,190 @@ export default function History() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === 'added' && (
+        <>
+          {/* Filters */}
+          <div className="bg-zinc-800 p-4 rounded-lg border border-zinc-700 mb-6 space-y-4">
+            {/* Search Bar */}
+            <div>
+              <input
+                type="text"
+                placeholder="Search by component name..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white placeholder-zinc-400 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {/* Category and Date Filters */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Category Filter */}
+              <div>
+                <label className="block text-zinc-300 mb-1">Category</label>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white"
+                >
+                  <option value="">All Categories</option>
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date Filter */}
+              <div>
+                <label className="block text-zinc-300 mb-1">Date Range</label>
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white"
+                >
+                  <option value="all">All Time</option>
+                  <option value="1month">Last 1 Month</option>
+                  <option value="6months">Last 6 Months</option>
+                  <option value="1year">Last 1 Year</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Added Components List */}
+          {loading ? (
+            <div className="text-center text-zinc-400 py-8">Loading...</div>
+          ) : filteredAddedComponents.length === 0 ? (
+            <div className="text-center text-zinc-400 py-8">
+              {addedComponents.length === 0 ? 'No added components found' : 'No results match your filters'}
+            </div>
+          ) : (
+            <div className="bg-zinc-800 rounded-lg border border-zinc-700 overflow-hidden">
+              {/* Table Header */}
+              <div className="grid grid-cols-12 gap-4 p-4 bg-zinc-900 border-b border-zinc-700 font-semibold text-white text-sm">
+                <div className="col-span-3">Component Name</div>
+                <div className="col-span-1 text-center">Qty</div>
+                <div className="col-span-2">Category</div>
+                <div className="col-span-2 text-center">Controlled</div>
+                <div className="col-span-4">Date Added</div>
+              </div>
+
+              {/* Table Rows */}
+              <div className="divide-y divide-zinc-700">
+                {filteredAddedComponents.map((item, index) => (
+                  <div
+                    key={item.component_id || index}
+                    className="grid grid-cols-12 gap-4 p-4 hover:bg-zinc-900 transition-colors text-sm"
+                  >
+                    <div className="col-span-3 text-white font-medium">
+                      {item.component_name}
+                    </div>
+                    <div className="col-span-1 text-center text-zinc-300">
+                      {item.quantity}
+                    </div>
+                    <div className="col-span-2 text-zinc-300">
+                      {item.category}
+                    </div>
+                    <div className="col-span-2 text-center">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        item.is_controlled 
+                          ? 'bg-yellow-900 text-yellow-200' 
+                          : 'bg-zinc-700 text-zinc-300'
+                      }`}>
+                        {item.is_controlled ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                    <div className="col-span-4 text-zinc-400 text-sm">
+                      {formatDate(item.date_added)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === 'modified' && (
+        <>
+          {/* Filters */}
+          <div className="bg-zinc-800 p-4 rounded-lg border border-zinc-700 mb-6 space-y-4">
+            {/* Search Bar */}
+            <div>
+              <input
+                type="text"
+                placeholder="Search by component name or changes..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white placeholder-zinc-400 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {/* Date Filter */}
+            <div>
+              <label className="block text-zinc-300 mb-1">Date Range</label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full p-2 bg-zinc-700 border border-zinc-600 rounded text-white"
+              >
+                <option value="all">All Time</option>
+                <option value="1month">Last 1 Month</option>
+                <option value="6months">Last 6 Months</option>
+                <option value="1year">Last 1 Year</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Modified Components List */}
+          {loading ? (
+            <div className="text-center text-zinc-400 py-8">Loading...</div>
+          ) : filteredModifiedComponents.length === 0 ? (
+            <div className="text-center text-zinc-400 py-8">
+              {modifiedComponents.length === 0 ? 'No component modifications found' : 'No results match your filters'}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredModifiedComponents.map((item, index) => (
+                <div
+                  key={`${item.component_id}-${item.modified_at}-${index}`}
+                  className="bg-zinc-800 rounded-lg border border-zinc-700 p-4 hover:bg-zinc-900 transition-colors"
+                >
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="text-white font-semibold text-lg mb-1">
+                        {item.component_name}
+                      </h3>
+                      <p className="text-zinc-400 text-sm">
+                        Modified: {formatDate(item.modified_at)}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Changes List */}
+                  <div className="mt-3 space-y-2">
+                    {item.changes.map((change, changeIndex) => (
+                      <div
+                        key={changeIndex}
+                        className="bg-zinc-900 rounded p-3 border border-zinc-700"
+                      >
+                        <p className="text-zinc-200 text-sm">
+                          <span className="font-medium text-zinc-300">{change.field}:</span>{' '}
+                          <span className="text-zinc-400 line-through">{change.old_value}</span>
+                          {' '}➡️{' '}
+                          <span className="text-green-400 font-medium">{change.new_value}</span>
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </>
