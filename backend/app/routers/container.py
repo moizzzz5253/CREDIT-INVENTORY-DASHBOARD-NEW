@@ -60,6 +60,17 @@ def list_containers(
 
 
 # --------------------------------------------------
+# GET SINGLE CONTAINER
+# --------------------------------------------------
+@router.get("/{container_code}", response_model=ContainerRead)
+def get_container(container_code: str, db: Session = Depends(get_db)):
+    container = db.query(Container).filter(Container.code == container_code).first()
+    if not container:
+        raise HTTPException(404, "Container not found")
+    return container
+
+
+# --------------------------------------------------
 # COMPONENTS IN CONTAINER
 # --------------------------------------------------
 @router.get("/{container_code}/components", response_model=list[ComponentRead])

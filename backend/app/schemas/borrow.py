@@ -17,6 +17,7 @@ class BorrowCreate(BaseModel):
     expected_return_date: date
 
     pic_name: str   # 👈 PIC entered manually (no login)
+    admin_password: str | None = None  # Required if any item is controlled
 
 
 class BorrowItemRead(BaseModel):

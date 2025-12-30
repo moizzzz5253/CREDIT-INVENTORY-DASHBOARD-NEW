@@ -334,6 +334,73 @@ def update_component(
         raise HTTPException(404, "Component not found")
 
     # -------------------------------------------------
+    # Check if password is required for modifications
+    # Password is required if:
+    # 1. Component is currently controlled AND any field is being modified
+    # 2. Component is becoming controlled (is_controlled changing from False to True)
+    # 3. Component is becoming uncontrolled (is_controlled changing from True to False) - existing logic
+    # -------------------------------------------------
+    is_becoming_controlled = (
+        is_controlled is not None and 
+        is_controlled == True and 
+        component.is_controlled == False
+    )
+    is_becoming_uncontrolled = (
+        is_controlled is not None and 
+        is_controlled == False and 
+        component.is_controlled == True
+    )
+    is_currently_controlled = component.is_controlled == True
+    has_any_modification = any([
+        name is not None,
+        category is not None,
+        quantity is not None,
+        remarks is not None,
+        storage_type is not None,
+        cabinet_number is not None,
+        shelf_number is not None,
+        container_id is not None,
+        drawer_index is not None,
+        storage_box_index is not None,
+        location_type is not None,
+        location_index is not None,
+        image is not None,
+        is_controlled is not None  # Include is_controlled in modification check
+    ])
+    
+    password_required = (
+        (is_currently_controlled and has_any_modification) or
+        is_becoming_controlled or
+        is_becoming_uncontrolled
+    )
+    
+    if password_required:
+        if not admin_password:
+            raise HTTPException(
+                400, 
+                "Admin password is required to modify controlled components or change controlled status"
+            )
+        
+        # Verify password
+        admin = db.query(Admin).first()
+        if admin is None:
+            # No admin record exists, use default password
+            if admin_password != DEFAULT_ADMIN_PASSWORD:
+                raise HTTPException(400, "Invalid admin password")
+        else:
+            # Verify password
+            is_valid = verify_password(admin_password, admin.password_hash)
+            if not is_valid:
+                raise HTTPException(400, "Invalid admin password")
+
+    # -------------------------------------------------
+    # Collect changes for email notification (before applying changes)
+    # -------------------------------------------------
+    changes_for_email = []
+    component_name_for_email = component.name
+    component_category_for_email = component.category
+
+    # -------------------------------------------------
     # Get old location label before any changes (for tracking)
     # -------------------------------------------------
     old_location_label = generate_location_label(component)
@@ -502,6 +569,13 @@ def update_component(
         
         new_location_label = generate_location_label(component)
         if old_location_label != new_location_label:
+            # Track location change for email
+            changes_for_email.append({
+                'field_name': 'location',
+                'old_value': old_location_label,
+                'new_value': new_location_label
+            })
+            # Track location change in history
             track_component_change(db, component_id, "location", old_location_label, new_location_label)
 
     # -------------------------------------------------
@@ -510,24 +584,14 @@ def update_component(
     if is_controlled is not None:
         # Check if controlled status is being changed
         if is_controlled != component.is_controlled:
-            # If changing to uncontrolled, require admin password
-            if not is_controlled:  # Changing from controlled to uncontrolled
-                if not admin_password:
-                    raise HTTPException(400, "Admin password is required to change controlled status")
-                
-                # Get admin record
-                admin = db.query(Admin).first()
-                if admin is None:
-                    # No admin record exists, use default password
-                    if admin_password != DEFAULT_ADMIN_PASSWORD:
-                        raise HTTPException(400, "Invalid admin password")
-                else:
-                    # Verify password
-                    is_valid = verify_password(admin_password, admin.password_hash)
-                    if not is_valid:
-                        raise HTTPException(400, "Invalid admin password")
+            # Track controlled status change for email
+            changes_for_email.append({
+                'field_name': 'is_controlled',
+                'old_value': "Yes" if component.is_controlled else "No",
+                'new_value': "Yes" if is_controlled else "No"
+            })
             
-            # Track controlled status change
+            # Track controlled status change in history
             track_component_change(
                 db, 
                 component_id, 
@@ -541,15 +605,28 @@ def update_component(
     # -------------------------------------------------
     # Track changes and apply basic fields
     # -------------------------------------------------
-    if name is not None:
-        # Track name change
+    if name is not None and name != component.name:
+        # Track name change for email
+        changes_for_email.append({
+            'field_name': 'name',
+            'old_value': component.name,
+            'new_value': name
+        })
+        # Track name change in history
         track_component_change(db, component_id, "name", component.name, name)
         component.name = name
 
     if category is not None:
         if category not in CATEGORIES:
             raise HTTPException(400, "Invalid category")
-        # Track category change
+        if category != component.category:
+            # Track category change for email
+            changes_for_email.append({
+                'field_name': 'category',
+                'old_value': component.category,
+                'new_value': category
+            })
+        # Track category change in history
         track_component_change(db, component_id, "category", component.category, category)
         component.category = category
 
@@ -566,14 +643,28 @@ def update_component(
                 f"Cannot set quantity to {quantity}. There are {borrowed_qty} items currently borrowed. "
                 f"Minimum quantity must be at least {borrowed_qty}."
             )
-        # Track quantity change
+        if quantity != component.quantity:
+            # Track quantity change for email
+            changes_for_email.append({
+                'field_name': 'quantity',
+                'old_value': component.quantity,
+                'new_value': quantity
+            })
+        # Track quantity change in history
         track_component_change(db, component_id, "quantity", component.quantity, quantity)
         component.quantity = quantity
 
     if remarks is not None:
-        # Track remarks change
         old_remarks = component.remarks if component.remarks else "None"
         new_remarks = remarks if remarks else "None"
+        if old_remarks != new_remarks:
+            # Track remarks change for email
+            changes_for_email.append({
+                'field_name': 'remarks',
+                'old_value': old_remarks,
+                'new_value': new_remarks
+            })
+        # Track remarks change in history
         track_component_change(db, component_id, "remarks", old_remarks, new_remarks)
         component.remarks = remarks
 
@@ -581,6 +672,14 @@ def update_component(
     # IMAGE OVERWRITE (CRITICAL FIX)
     # -------------------------------------------------
     if image is not None:
+        # Track image change for email
+        old_image = component.image_path if component.image_path else "None"
+        changes_for_email.append({
+            'field_name': 'image',
+            'old_value': old_image,
+            'new_value': image.filename if image.filename else "Updated"
+        })
+        
         os.makedirs(UPLOAD_DIR, exist_ok=True)
 
         # Remove old image
@@ -602,10 +701,30 @@ def update_component(
     # Timestamp
     # -------------------------------------------------
     component.updated_at = datetime.utcnow()
+    modified_at = component.updated_at
 
     db.commit()
     db.refresh(component)
     db.refresh(component, attribute_names=["container"])
+
+    # -------------------------------------------------
+    # Send email notification if component is controlled and has changes
+    # -------------------------------------------------
+    if component.is_controlled and changes_for_email:
+        try:
+            admin_emails = get_admin_email_list(db)
+            if admin_emails:
+                email_service.send_controlled_component_modified_notification(
+                    component_name=component_name_for_email,
+                    category=component_category_for_email,
+                    changes=changes_for_email,
+                    modified_at=modified_at,
+                    admin_emails=admin_emails
+                )
+        except Exception as e:
+            # Log error but don't fail the update
+            from loguru import logger
+            logger.error(f"Failed to send controlled component modified notification email: {e}")
 
     return component_to_read(component)
 
@@ -641,6 +760,26 @@ def delete_component(
             400,
             "Component is currently borrowed"
         )
+
+    # Check if component is controlled and verify password if needed
+    if component.is_controlled:
+        if not payload.admin_password:
+            raise HTTPException(
+                400,
+                "Admin password is required to delete controlled components"
+            )
+        
+        # Verify password
+        admin = db.query(Admin).first()
+        if admin is None:
+            # No admin record exists, use default password
+            if payload.admin_password != DEFAULT_ADMIN_PASSWORD:
+                raise HTTPException(400, "Invalid admin password")
+        else:
+            # Verify password
+            is_valid = verify_password(payload.admin_password, admin.password_hash)
+            if not is_valid:
+                raise HTTPException(400, "Invalid admin password")
 
     # Capture component details before deletion for email notification
     component_name = component.name

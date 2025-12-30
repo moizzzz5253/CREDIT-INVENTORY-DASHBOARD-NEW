@@ -27,6 +27,7 @@ from app.routers import (
 from app.routers import constants_router
 from app.routers import email_admin
 from app.services.overdue_email_scheduler import overdue_scheduler
+from app.services.arduino_service import arduino_service
 
 # -----------------------------
 # Database initialization
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     overdue_scheduler.stop()
+    arduino_service.close()
 
 # -----------------------------
 # App initialization
@@ -54,6 +56,18 @@ app = FastAPI(
 )
 app.mount("/qr_codes", StaticFiles(directory="qr_codes"), name="qr_codes")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# Serve Arduino status page
+from fastapi.responses import FileResponse
+@app.get("/arduino-status")
+async def arduino_status_page():
+    """Serve the Arduino status monitoring page."""
+    status_file = Path(__file__).parent.parent / "arduino_status.html"
+    if status_file.exists():
+        return FileResponse(status_file)
+    else:
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(content="<h1>Arduino status page not found</h1>", status_code=404)
 # -----------------------------
 # CORS (frontend support)
 # -----------------------------
@@ -90,3 +104,18 @@ app.include_router(admin.router)
 @app.get("/")
 def root():
     return {"status": "CREDIT backend running"}
+
+
+# -----------------------------
+# Arduino Status Page
+# -----------------------------
+from fastapi.responses import FileResponse
+@app.get("/arduino-status")
+async def arduino_status_page():
+    """Serve the Arduino status monitoring page."""
+    status_file = backend_dir / "arduino_status.html"
+    if status_file.exists():
+        return FileResponse(status_file)
+    else:
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(content="<h1>Arduino status page not found</h1>", status_code=404)

@@ -174,11 +174,15 @@ class EmailService:
         # Build items list HTML
         items_html = ""
         for item in items:
+            is_controlled = item.get('is_controlled', False)
+            controlled_status = "Yes" if is_controlled else "No"
+            controlled_style = 'color: #FF9800; font-weight: bold;' if is_controlled else 'color: #666;'
             items_html += f"""
             <tr>
                 <td style="padding: 8px; border: 1px solid #ddd;">{item['component_name']}</td>
                 <td style="padding: 8px; border: 1px solid #ddd;">{item['category']}</td>
                 <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{item['quantity']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center; {controlled_style}">{controlled_status}</td>
             </tr>
             """
         
@@ -212,6 +216,7 @@ class EmailService:
                                 <th>Component Name</th>
                                 <th>Category</th>
                                 <th>Quantity</th>
+                                <th>Controlled</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -255,7 +260,7 @@ Dear {borrower_name},
 
 This email confirms that you have borrowed the following items:
 
-{chr(10).join([f"- {item['component_name']} ({item['category']}): {item['quantity']}" for item in items])}
+{chr(10).join([f"- {item['component_name']} ({item['category']}): {item['quantity']} - Controlled: {'Yes' if item.get('is_controlled', False) else 'No'}" for item in items])}
 
 Borrow Details:
 - Expected Return Date: {expected_return_date.strftime('%B %d, %Y')}
@@ -577,6 +582,168 @@ This email will never request personal or financial information. If you receive 
         
         return self._send_email(borrower_email, subject, html_body, text_body)
     
+    def send_overdue_notification_to_admin(
+        self,
+        overdue_borrowers: List[Dict[str, any]],
+        admin_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send overdue notification to admin emails.
+        Includes all overdue borrowers with their details and component information.
+        
+        Args:
+            overdue_borrowers: List of dictionaries containing borrower and overdue item information
+            admin_emails: List of admin email addresses
+        """
+        if not admin_emails:
+            logger.warning("No admin emails provided for overdue notification")
+            return False
+        
+        if not overdue_borrowers:
+            return False
+        
+        subject = f"⚠️ Admin Alert: {len(overdue_borrowers)} Borrower{'s' if len(overdue_borrowers) != 1 else ''} with Overdue Items"
+        
+        # Build borrowers HTML table
+        borrowers_html = ""
+        for borrower_data in overdue_borrowers:
+            borrower_name = borrower_data.get('borrower_name', 'N/A')
+            borrower_email = borrower_data.get('borrower_email', 'N/A')
+            borrower_tp_id = borrower_data.get('borrower_tp_id', 'N/A')
+            borrower_phone = borrower_data.get('borrower_phone', 'N/A')
+            overdue_items = borrower_data.get('overdue_items', [])
+            max_days_overdue = borrower_data.get('max_days_overdue', 0)
+            earliest_return_date = borrower_data.get('earliest_return_date')
+            
+            # Build items list for this borrower
+            items_html = ""
+            for item in overdue_items:
+                items_html += f"""
+                <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;">{item['component_name']}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">{item['category']}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{item['quantity']}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">{item.get('expected_return_date', earliest_return_date).strftime('%B %d, %Y') if earliest_return_date else 'N/A'}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{item.get('days_overdue', 0)}</td>
+                </tr>
+                """
+            
+            borrowers_html += f"""
+            <div style="margin-bottom: 30px; border: 2px solid #f44336; border-radius: 5px; padding: 15px; background-color: #fff;">
+                <h3 style="color: #f44336; margin-top: 0;">Borrower: {borrower_name}</h3>
+                <div style="background-color: #f9f9f9; padding: 10px; margin-bottom: 15px; border-left: 4px solid #f44336;">
+                    <p style="margin: 5px 0;"><strong>Email:</strong> {borrower_email}</p>
+                    <p style="margin: 5px 0;"><strong>TP ID:</strong> {borrower_tp_id}</p>
+                    <p style="margin: 5px 0;"><strong>Phone:</strong> {borrower_phone}</p>
+                    <p style="margin: 5px 0;"><strong>Days Overdue:</strong> {max_days_overdue} day{'s' if max_days_overdue != 1 else ''}</p>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+                    <thead>
+                        <tr>
+                            <th style="background-color: #f44336; color: white; padding: 10px; text-align: left; border: 1px solid #ddd;">Component Name</th>
+                            <th style="background-color: #f44336; color: white; padding: 10px; text-align: left; border: 1px solid #ddd;">Category</th>
+                            <th style="background-color: #f44336; color: white; padding: 10px; text-align: center; border: 1px solid #ddd;">Quantity</th>
+                            <th style="background-color: #f44336; color: white; padding: 10px; text-align: left; border: 1px solid #ddd;">Expected Return Date</th>
+                            <th style="background-color: #f44336; color: white; padding: 10px; text-align: center; border: 1px solid #ddd;">Days Overdue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {items_html}
+                    </tbody>
+                </table>
+            </div>
+            """
+        
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 800px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #f44336; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9f9f9; padding: 20px; }}
+                .warning-box {{ background-color: #fff3cd; border: 2px solid #ffc107; padding: 15px; margin: 15px 0; border-radius: 5px; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #f44336; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>⚠️ Overdue Items - Admin Notification</h2>
+                </div>
+                <div class="content">
+                    <div class="warning-box">
+                        <h3 style="margin-top: 0; color: #856404;">Action Required</h3>
+                        <p>There are <strong>{len(overdue_borrowers)} borrower{'s' if len(overdue_borrowers) != 1 else ''}</strong> with overdue items that require attention.</p>
+                    </div>
+                    
+                    <p>Dear Admin,</p>
+                    <p>The following borrowers have overdue items that need to be returned:</p>
+                    
+                    {borrowers_html}
+                    
+                    <div class="info-box">
+                        <p><strong>Please follow up with these borrowers to ensure items are returned promptly.</strong></p>
+                    </div>
+                    
+                    <p style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #f44336; border-radius: 4px;">
+                        <strong>Important Notice:</strong><br>
+                        This is an automated, non-replyable email from the CREDIT Inventory Management System.<br>
+                        For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.<br>
+                        This email serves as an official record and may be used for verification purposes.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p style="font-size: 11px; color: #999;">CREDIT Inventory Management System - Automated Notification</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Build text body
+        text_borrowers = []
+        for borrower_data in overdue_borrowers:
+            borrower_name = borrower_data.get('borrower_name', 'N/A')
+            borrower_email = borrower_data.get('borrower_email', 'N/A')
+            borrower_tp_id = borrower_data.get('borrower_tp_id', 'N/A')
+            borrower_phone = borrower_data.get('borrower_phone', 'N/A')
+            overdue_items = borrower_data.get('overdue_items', [])
+            max_days_overdue = borrower_data.get('max_days_overdue', 0)
+            earliest_return_date = borrower_data.get('earliest_return_date')
+            
+            text_borrowers.append(f"\n{'='*60}")
+            text_borrowers.append(f"Borrower: {borrower_name}")
+            text_borrowers.append(f"Email: {borrower_email}")
+            text_borrowers.append(f"TP ID: {borrower_tp_id}")
+            text_borrowers.append(f"Phone: {borrower_phone}")
+            text_borrowers.append(f"Days Overdue: {max_days_overdue} day{'s' if max_days_overdue != 1 else ''}")
+            text_borrowers.append(f"\nOverdue Items:")
+            for item in overdue_items:
+                return_date_str = item.get('expected_return_date', earliest_return_date).strftime('%B %d, %Y') if earliest_return_date else 'N/A'
+                text_borrowers.append(f"  - {item['component_name']} ({item['category']}): {item['quantity']} - Due: {return_date_str} - {item.get('days_overdue', 0)} days overdue")
+        
+        text_body = f"""
+Overdue Items - Admin Notification
+
+There are {len(overdue_borrowers)} borrower{'s' if len(overdue_borrowers) != 1 else ''} with overdue items that require attention.
+
+{chr(10).join(text_borrowers)}
+
+Please follow up with these borrowers to ensure items are returned promptly.
+
+---
+IMPORTANT NOTICE:
+This is an automated, non-replyable email from the CREDIT Inventory Management System.
+For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.
+This email serves as an official record and may be used for verification purposes.
+        """
+        
+        success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
+        return success_count > 0
+    
     def _send_email_to_multiple_recipients(
         self, 
         recipient_emails: List[str], 
@@ -783,6 +950,149 @@ This email serves as an official record and may be used for verification purpose
         success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
         return success_count > 0
     
+    def send_controlled_component_modified_notification(
+        self,
+        component_name: str,
+        category: str,
+        changes: List[Dict[str, any]],
+        modified_at: datetime,
+        admin_emails: Optional[List[str]] = None
+    ) -> bool:
+        """
+        Send notification when a controlled component is modified.
+        Sends separate emails to each admin email address.
+        
+        Args:
+            component_name: Name of the component
+            category: Category of the component
+            changes: List of dictionaries with 'field_name', 'old_value', 'new_value'
+            modified_at: Timestamp of modification
+            admin_emails: List of admin email addresses
+        """
+        if not admin_emails:
+            logger.warning("No admin emails provided for controlled component modified notification")
+            return False
+        
+        if not changes:
+            return False
+        
+        subject = f"Controlled Component Modified - {component_name}"
+        modified_at_str = format_datetime_kl(modified_at, '%B %d, %Y at %I:%M %p')
+        
+        # Build changes table HTML
+        changes_html = ""
+        for change in changes:
+            field_name = change.get('field_name', 'Unknown')
+            old_value = change.get('old_value', 'None')
+            new_value = change.get('new_value', 'None')
+            
+            # Format values for display
+            old_display = str(old_value) if old_value is not None else "None"
+            new_display = str(new_value) if new_value is not None else "None"
+            
+            changes_html += f"""
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">{field_name}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; color: #666;">{old_display}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; color: #2196F3; font-weight: bold;">{new_display}</td>
+            </tr>
+            """
+        
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 700px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #FF9800; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9f9f9; padding: 20px; }}
+                .info-box {{ background-color: white; padding: 15px; margin: 10px 0; border-left: 4px solid #FF9800; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+                th {{ background-color: #FF9800; color: white; padding: 10px; text-align: left; }}
+                td {{ padding: 8px; border: 1px solid #ddd; }}
+                .footer {{ text-align: center; padding: 20px; color: #666; font-size: 12px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Controlled Component Modified</h2>
+                </div>
+                <div class="content">
+                    <p>A controlled component has been modified in the CREDIT Inventory System:</p>
+                    
+                    <div class="info-box">
+                        <p><strong>Component Details:</strong></p>
+                        <ul>
+                            <li><strong>Name:</strong> {component_name}</li>
+                            <li><strong>Category:</strong> {category}</li>
+                            <li><strong>Modified At:</strong> {modified_at_str}</li>
+                        </ul>
+                    </div>
+                    
+                    <h3 style="margin-top: 20px; color: #FF9800;">Changes Made:</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Old Value</th>
+                                <th>New Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {changes_html}
+                        </tbody>
+                    </table>
+                    
+                    <p style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #FF9800; border-radius: 4px;">
+                        <strong>Important Notice:</strong><br>
+                        This is an automated, non-replyable email from the CREDIT Inventory Management System.<br>
+                        For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.<br>
+                        This email serves as an official record and may be used for verification purposes.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p style="font-size: 11px; color: #999;">CREDIT Inventory Management System - Automated Notification</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Build text body
+        text_changes = []
+        for change in changes:
+            field_name = change.get('field_name', 'Unknown')
+            old_value = change.get('old_value', 'None')
+            new_value = change.get('new_value', 'None')
+            old_display = str(old_value) if old_value is not None else "None"
+            new_display = str(new_value) if new_value is not None else "None"
+            text_changes.append(f"- {field_name}: {old_display} → {new_display}")
+        
+        text_body = f"""
+Controlled Component Modified - CREDIT Inventory System
+
+A controlled component has been modified in the CREDIT Inventory System:
+
+Component Details:
+- Name: {component_name}
+- Category: {category}
+- Modified At: {modified_at_str}
+
+Changes Made:
+{chr(10).join(text_changes)}
+
+---
+IMPORTANT NOTICE:
+This is an automated, non-replyable email from the CREDIT Inventory Management System.
+For any inquiries or issues, please visit the CREDIT Centre at Level 4, Block A, Engineering Labs.
+This email serves as an official record and may be used for verification purposes.
+        """
+        
+        success_count = self._send_email_to_multiple_recipients(admin_emails, subject, html_body, text_body)
+        return success_count > 0
+    
     def send_controlled_components_batch_summary(
         self,
         components: List[Dict[str, any]],
@@ -927,11 +1237,15 @@ This email serves as an official record and may be used for verification purpose
         # Build items list HTML
         items_html = ""
         for item in items:
+            is_controlled = item.get('is_controlled', False)
+            controlled_status = "Yes" if is_controlled else "No"
+            controlled_style = 'color: #FF9800; font-weight: bold;' if is_controlled else 'color: #666;'
             items_html += f"""
             <tr>
                 <td style="padding: 8px; border: 1px solid #ddd;">{item['component_name']}</td>
                 <td style="padding: 8px; border: 1px solid #ddd;">{item['category']}</td>
                 <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">{item['quantity']}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center; {controlled_style}">{controlled_status}</td>
             </tr>
             """
         
@@ -964,6 +1278,7 @@ This email serves as an official record and may be used for verification purpose
                                 <th>Component Name</th>
                                 <th>Category</th>
                                 <th>Quantity</th>
+                                <th>Controlled</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1011,7 +1326,7 @@ Admin Notification: Items Borrowed - CREDIT Inventory System
 
 The following items have been borrowed from the CREDIT Inventory System:
 
-{chr(10).join([f"- {item['component_name']} ({item['category']}): {item['quantity']}" for item in items])}
+{chr(10).join([f"- {item['component_name']} ({item['category']}): {item['quantity']} - Controlled: {'Yes' if item.get('is_controlled', False) else 'No'}" for item in items])}
 
 Borrower Information:
 - Name: {borrower_name}

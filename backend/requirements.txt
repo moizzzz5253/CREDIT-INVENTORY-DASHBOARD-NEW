@@ -54,3 +54,8 @@ pytz
 # Scheduling
 # -------------------------------
 apscheduler
+
+# -------------------------------
+# Arduino Communication
+# -------------------------------
+pyserial

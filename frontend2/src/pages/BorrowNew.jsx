@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createBorrow } from '../api/borrow.api.js';
 import { getAllComponents } from '../api/components.api.js';
+import { verifyAdminPassword } from '../api/admin.api.js';
 
 // Searchable Component Dropdown
 function SearchableComponentSelect({ components, value, onChange, required }) {
@@ -126,6 +127,10 @@ export default function BorrowNew() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState(''); // 'success' or 'error'
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [pendingBorrowData, setPendingBorrowData] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -190,11 +195,6 @@ export default function BorrowNew() {
       }
       const comp = components.find(c => c.id == item.component_id);
       if (comp) {
-        // Check if component is controlled
-        if (comp.is_controlled) {
-          setMessage(`Component "${comp.name}" is controlled and cannot be borrowed.`);
-          return false;
-        }
         const available = (comp.available_quantity || 0);
         if (item.quantity > available) {
           setMessage(`Quantity for ${comp.name} exceeds available. Available: ${available}, Requested: ${item.quantity}`);
@@ -208,8 +208,15 @@ export default function BorrowNew() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
-    setLoading(true);
-    try {
+    
+    // Check if any component is controlled
+    const hasControlledItems = formData.items.some(item => {
+      const comp = components.find(c => c.id == item.component_id);
+      return comp && comp.is_controlled;
+    });
+    
+    if (hasControlledItems) {
+      // Store form data and show password modal
       const dataToSend = {
         ...formData,
         items: formData.items.map(item => ({
@@ -217,6 +224,51 @@ export default function BorrowNew() {
           quantity: parseInt(item.quantity)
         }))
       };
+      setPendingBorrowData(dataToSend);
+      setShowPasswordModal(true);
+      setPasswordError('');
+      setAdminPassword('');
+      return;
+    }
+    
+    // No controlled items, proceed directly
+    await submitBorrow({
+      ...formData,
+      items: formData.items.map(item => ({
+        component_id: parseInt(item.component_id),
+        quantity: parseInt(item.quantity)
+      }))
+    });
+  };
+
+  const handlePasswordVerify = async () => {
+    if (!adminPassword.trim()) {
+      setPasswordError('Password is required');
+      return;
+    }
+
+    try {
+      const result = await verifyAdminPassword(adminPassword);
+      if (result.success) {
+        setPasswordError('');
+        setShowPasswordModal(false);
+        // Proceed with borrow submission including password
+        await submitBorrow({
+          ...pendingBorrowData,
+          admin_password: adminPassword
+        });
+        setAdminPassword('');
+      } else {
+        setPasswordError(result.message || 'Invalid password');
+      }
+    } catch (err) {
+      setPasswordError(err?.response?.data?.message || 'Failed to verify password');
+    }
+  };
+
+  const submitBorrow = async (dataToSend) => {
+    setLoading(true);
+    try {
       await createBorrow(dataToSend);
       setMessage('Borrow created successfully!');
       setMessageType('success');
@@ -228,11 +280,16 @@ export default function BorrowNew() {
         expected_return_date: new Date().toISOString().split('T')[0],
         pic_name: ''
       });
+      setPendingBorrowData(null);
       // Redirect to active borrows after a short delay
       setTimeout(() => navigate('/borrow/active'), 2000);
     } catch (error) {
-      setMessage('Error creating borrow: ' + error.message);
+      setMessage('Error creating borrow: ' + (error.response?.data?.detail || error.message));
       setMessageType('error');
+      // If error is due to password, show modal again
+      if (error.response?.data?.detail?.includes('password') || error.response?.data?.detail?.includes('Password')) {
+        setShowPasswordModal(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -341,6 +398,63 @@ export default function BorrowNew() {
         <p className={`mt-4 text-xl font-bold p-4 rounded ${messageType === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
           {message}
         </p>
+      )}
+
+      {/* Password Modal for Controlled Items */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-zinc-800 p-6 rounded-lg border border-zinc-700 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-white mb-4">Admin Password Required</h3>
+            <p className="text-zinc-300 mb-4">
+              One or more items in your borrow request are controlled components. 
+              Please enter the admin password to proceed.
+            </p>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => {
+                setAdminPassword(e.target.value);
+                setPasswordError('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handlePasswordVerify();
+                }
+              }}
+              placeholder="Enter admin password"
+              className="w-full p-2 bg-zinc-900 border border-zinc-700 rounded text-white mb-2"
+              autoFocus
+              disabled={loading}
+            />
+            {passwordError && (
+              <p className="text-red-400 text-sm mb-2">{passwordError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setAdminPassword('');
+                  setPasswordError('');
+                  setPendingBorrowData(null);
+                }}
+                className="px-4 py-2 text-zinc-300 hover:text-white transition-colors"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePasswordVerify}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading || !adminPassword.trim()}
+              >
+                {loading ? 'Verifying...' : 'Verify & Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

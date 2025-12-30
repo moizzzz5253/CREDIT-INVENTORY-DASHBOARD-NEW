@@ -1,0 +1,71 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: credit-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Database persistence - use named volume to avoid Windows permission issues
+      - database-data:/app/data
+      # QR codes - use named volume to avoid Windows permission issues
+      - qr-codes-data:/app/qr_codes
+      # Uploads - use named volume to avoid Windows permission issues
+      - uploads-data:/app/uploads
+      # Database backups directory (read-only mount for backups)
+      - ./backend/database_backups:/app/database_backups:ro
+      # Mount backend directory read-only for initial data copy
+      - ./backend:/app/backend-mount:ro
+    environment:
+      - API_PORT=8000
+      - FRONTEND_PORT=80
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost}
+      # Set database path to use data directory
+      - DATABASE_PATH=/app/data/inventory.db
+    env_file:
+      - .env
+    networks:
+      - credit-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend2
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+    container_name: credit-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - credit-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  credit-network:
+    driver: bridge
+
+volumes:
+  database-data:
+    driver: local
+  qr-codes-data:
+    driver: local
+  uploads-data:
+    driver: local
+

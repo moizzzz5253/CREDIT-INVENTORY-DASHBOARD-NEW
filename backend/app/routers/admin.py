@@ -16,6 +16,10 @@ from app.core.security import (
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+# Import and add Arduino routes
+from app.routers.admin_arduino_endpoints import add_arduino_routes
+add_arduino_routes(router)
+
 
 def get_or_create_admin(db: Session) -> Admin:
     """Get the admin record, creating it if it doesn't exist."""

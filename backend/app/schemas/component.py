@@ -63,6 +63,7 @@ class ComponentRead(BaseModel):
 
 class ComponentDelete(BaseModel):
     reason: str
+    admin_password: str | None = None  # Required if component is controlled
 
 class ComponentUpdate(BaseModel):
     name: Optional[str] = Field(

@@ -13,6 +13,8 @@ import pytz
 from app.database.db import SessionLocal
 from app.database.models import BorrowTransaction, BorrowItem, BorrowStatus
 from app.services.email_service import email_service
+from app.services.arduino_service import arduino_service
+from app.utils.admin_emails import get_admin_email_list
 
 # Timezone for Kuala Lumpur (GMT+8) - same as email service
 KL_TIMEZONE = pytz.timezone('Asia/Kuala_Lumpur')
@@ -58,12 +60,16 @@ class OverdueEmailScheduler:
                 
                 borrower_email = tx.borrower.email.lower()
                 borrower_name = tx.borrower.name
+                borrower_tp_id = tx.borrower.tp_id
+                borrower_phone = tx.borrower.phone
                 
                 # Initialize borrower group if not exists
                 if borrower_email not in borrower_groups:
                     borrower_groups[borrower_email] = {
                         'borrower_name': borrower_name,
                         'borrower_email': borrower_email,
+                        'borrower_tp_id': borrower_tp_id,
+                        'borrower_phone': borrower_phone,
                         'transactions': [],
                         'overdue_items': [],
                         'expected_return_dates': set(),
@@ -139,16 +145,84 @@ class OverdueEmailScheduler:
                         f"Error sending overdue email to {borrower_email}: {e}"
                     )
             
+            # Send admin notification with all overdue borrowers
+            if len(borrower_groups) > 0:
+                try:
+                    # Get admin emails
+                    admin_emails = get_admin_email_list(db)
+                    
+                    if admin_emails:
+                        # Prepare overdue borrowers data for admin notification
+                        overdue_borrowers_data = []
+                        for borrower_email, group_data in borrower_groups.items():
+                            if not group_data['overdue_items']:
+                                continue
+                            
+                            # Calculate earliest expected return date and maximum days overdue
+                            earliest_return_date = min(group_data['expected_return_dates'])
+                            max_days_overdue = max(group_data['days_overdue_list'])
+                            
+                            overdue_borrowers_data.append({
+                                'borrower_name': group_data['borrower_name'],
+                                'borrower_email': group_data['borrower_email'],
+                                'borrower_tp_id': group_data['borrower_tp_id'],
+                                'borrower_phone': group_data['borrower_phone'],
+                                'overdue_items': group_data['overdue_items'],
+                                'earliest_return_date': earliest_return_date,
+                                'max_days_overdue': max_days_overdue
+                            })
+                        
+                        # Send admin notification
+                        if overdue_borrowers_data:
+                            admin_success = email_service.send_overdue_notification_to_admin(
+                                overdue_borrowers=overdue_borrowers_data,
+                                admin_emails=admin_emails
+                            )
+                            
+                            if admin_success:
+                                logger.info(
+                                    f"Sent overdue admin notification to {len(admin_emails)} admin(s) "
+                                    f"for {len(overdue_borrowers_data)} borrower(s)"
+                                )
+                            else:
+                                logger.warning("Failed to send overdue admin notification")
+                    else:
+                        logger.warning("No admin emails configured. Skipping admin notification.")
+                except Exception as e:
+                    logger.error(f"Error sending admin overdue notification: {e}")
+            
             db.commit()
             
-            if emails_sent > 0:
-                logger.info(f"Overdue email check completed. Sent {emails_sent} reminder(s) to {len(borrower_groups)} borrower(s).")
+            # Determine overall success/failure for Arduino buzzer
+            # Success: if we found overdue items and successfully sent at least one email
+            # Failure: if we found overdue items but failed to send emails, or if there was an error
+            overall_success = False
+            if len(borrower_groups) > 0:
+                # We found overdue items
+                if emails_sent > 0:
+                    # Successfully sent at least one email
+                    overall_success = True
+                    logger.info(f"Overdue email check completed. Sent {emails_sent} reminder(s) to {len(borrower_groups)} borrower(s).")
+                else:
+                    # Found overdue items but failed to send emails
+                    overall_success = False
+                    logger.warning("Overdue email check completed. Found overdue items but failed to send emails.")
             else:
+                # No overdue items found - this is also considered success (no action needed)
+                overall_success = True
                 logger.debug("Overdue email check completed. No emails to send.")
+            
+            # Trigger Arduino buzzer based on result
+            if overall_success:
+                arduino_service.trigger_success_buzzer()
+            else:
+                arduino_service.trigger_failure_buzzer()
                 
         except Exception as e:
             logger.error(f"Error in overdue email check: {e}")
             db.rollback()
+            # Trigger failure buzzer on error
+            arduino_service.trigger_failure_buzzer()
         finally:
             db.close()
     
@@ -217,10 +291,10 @@ class OverdueEmailScheduler:
             logger.warning("Overdue email scheduler is already running.")
             return
         
-        # Schedule daily check at 9:00 AM
+        # Schedule daily check at 12:20 PM
         self.scheduler.add_job(
             func=self.check_and_send_overdue_emails,
-            trigger=CronTrigger(hour=9, minute=0),
+            trigger=CronTrigger(hour=12, minute=20),
             id='check_overdue_emails',
             name='Check and send overdue email reminders',
             replace_existing=True
@@ -239,7 +313,7 @@ class OverdueEmailScheduler:
         self.scheduler.start()
         self.is_running = True
         logger.info("Overdue email scheduler started.")
-        logger.info("  - Daily overdue check: 9:00 AM (Kuala Lumpur time, GMT+8)")
+        logger.info("  - Daily overdue check: 12:20 PM (Kuala Lumpur time, GMT+8)")
         logger.info("  - Weekly flag reset: Monday 8:00 AM (Kuala Lumpur time, GMT+8)")
     
     def stop(self):

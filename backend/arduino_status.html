@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arduino Connection Status</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .status-value {
+            color: #212529;
+            font-weight: 500;
+        }
+        
+        .status-connected {
+            color: #28a745;
+            font-weight: bold;
+        }
+        
+        .status-disconnected {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            flex: 1;
+            min-width: 120px;
+        }
+        
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button.secondary {
+            background: #6c757d;
+        }
+        
+        button.secondary:hover {
+            background: #5a6268;
+        }
+        
+        button.success {
+            background: #28a745;
+        }
+        
+        button.success:hover {
+            background: #218838;
+        }
+        
+        button.danger {
+            background: #dc3545;
+        }
+        
+        button.danger:hover {
+            background: #c82333;
+        }
+        
+        .log-area {
+            background: #212529;
+            color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            min-height: 100px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 5px 0;
+            border-bottom: 1px solid #343a40;
+        }
+        
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        
+        .log-time {
+            color: #6c757d;
+            margin-right: 10px;
+        }
+        
+        .log-info {
+            color: #17a2b8;
+        }
+        
+        .log-success {
+            color: #28a745;
+        }
+        
+        .log-error {
+            color: #dc3545;
+        }
+        
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .auto-refresh input {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .auto-refresh label {
+            color: #495057;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Arduino Connection Status</h1>
+        <p class="subtitle">Monitor your Arduino connection and test buzzer functionality</p>
+        
+        <div class="status-card">
+            <div class="status-item">
+                <span class="status-label">Connection Status:</span>
+                <span class="status-value" id="connectionStatus">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Port:</span>
+                <span class="status-value" id="portStatus">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Detection Attempted:</span>
+                <span class="status-value" id="detectionStatus">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Serial Library:</span>
+                <span class="status-value" id="serialStatus">-</span>
+            </div>
+        </div>
+        
+        <div class="button-group">
+            <button onclick="refreshStatus()">🔄 Refresh Status</button>
+            <button class="secondary" onclick="redetectArduino()">🔍 Re-detect Arduino</button>
+            <button class="success" onclick="testSuccessBuzzer()">✅ Test Success Buzzer</button>
+            <button class="danger" onclick="testFailureBuzzer()">❌ Test Failure Buzzer</button>
+        </div>
+        
+        <div class="auto-refresh">
+            <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
+            <label for="autoRefresh">Auto-refresh every 5 seconds</label>
+        </div>
+        
+        <div class="log-area" id="logArea">
+            <div class="log-entry">
+                <span class="log-time">[Ready]</span>
+                <span class="log-info">Arduino status monitor initialized</span>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = window.location.origin;
+        let autoRefreshInterval = null;
+        
+        function getCurrentTime() {
+            return new Date().toLocaleTimeString();
+        }
+        
+        function addLog(message, type = 'info') {
+            const logArea = document.getElementById('logArea');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.innerHTML = `<span class="log-time">[${getCurrentTime()}]</span><span class="log-${type}">${message}</span>`;
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+        
+        async function refreshStatus() {
+            try {
+                addLog('Checking Arduino status...', 'info');
+                const response = await fetch(`${API_BASE}/api/admin/arduino/status`);
+                const data = await response.json();
+                
+                // Update status display
+                const connectionStatus = document.getElementById('connectionStatus');
+                const portStatus = document.getElementById('portStatus');
+                const detectionStatus = document.getElementById('detectionStatus');
+                const serialStatus = document.getElementById('serialStatus');
+                
+                if (data.connected) {
+                    connectionStatus.textContent = 'CONNECTED ✓';
+                    connectionStatus.className = 'status-value status-connected';
+                    addLog('Arduino is connected!', 'success');
+                } else {
+                    connectionStatus.textContent = 'NOT CONNECTED ✗';
+                    connectionStatus.className = 'status-value status-disconnected';
+                    addLog('Arduino is not connected', 'error');
+                }
+                
+                portStatus.textContent = data.port || 'Not detected';
+                detectionStatus.textContent = data.detection_attempted ? 'Yes' : 'No';
+                serialStatus.textContent = data.serial_available !== false ? 'Available' : 'Not available';
+                
+            } catch (error) {
+                addLog(`Error checking status: ${error.message}`, 'error');
+                document.getElementById('connectionStatus').textContent = 'ERROR';
+                document.getElementById('connectionStatus').className = 'status-value status-disconnected';
+            }
+        }
+        
+        async function redetectArduino() {
+            try {
+                addLog('Re-detecting Arduino...', 'info');
+                const response = await fetch(`${API_BASE}/api/admin/arduino/redetect`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addLog(data.message, data.connected ? 'success' : 'error');
+                    await refreshStatus();
+                } else {
+                    addLog('Re-detection failed', 'error');
+                }
+            } catch (error) {
+                addLog(`Error re-detecting: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testSuccessBuzzer() {
+            try {
+                addLog('Testing success buzzer (2 pulses)...', 'info');
+                const response = await fetch(`${API_BASE}/api/admin/arduino/test-success`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addLog('✓ Success buzzer triggered! You should hear 2 pulses.', 'success');
+                } else {
+                    addLog('✗ ' + data.message, 'error');
+                }
+            } catch (error) {
+                addLog(`Error testing buzzer: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testFailureBuzzer() {
+            try {
+                addLog('Testing failure buzzer (3 short pulses)...', 'info');
+                const response = await fetch(`${API_BASE}/api/admin/arduino/test-failure`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    addLog('✓ Failure buzzer triggered! You should hear 3 short pulses.', 'success');
+                } else {
+                    addLog('✗ ' + data.message, 'error');
+                }
+            } catch (error) {
+                addLog(`Error testing buzzer: ${error.message}`, 'error');
+            }
+        }
+        
+        function toggleAutoRefresh() {
+            const checkbox = document.getElementById('autoRefresh');
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(refreshStatus, 5000);
+                addLog('Auto-refresh enabled (every 5 seconds)', 'info');
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+                addLog('Auto-refresh disabled', 'info');
+            }
+        }
+        
+        // Initial status check
+        refreshStatus();
+    </script>
+</body>
+</html>
+
+
+
+
+
+

@@ -86,13 +86,35 @@ export default function ManageComponents() {
   const saveEdit = async (e) => {
     e.preventDefault();
     
-    // Check if controlled status is being changed from controlled to uncontrolled
+    // Check if password is required for modifications
     const originalComponent = components.find(c => c.id === editing.id);
-    const wasControlled = originalComponent?.is_controlled || false;
-    const isNowControlled = editing.is_controlled || false;
+    const wasControlled = Boolean(originalComponent?.is_controlled);
+    const isNowControlled = Boolean(editing.is_controlled);
     
-    // If changing from controlled to uncontrolled, require password
-    if (wasControlled && !isNowControlled) {
+    // Password is required if:
+    // 1. Component is currently controlled AND any field is being modified
+    // 2. Component is becoming controlled (changing from non-controlled to controlled)
+    // 3. Component is becoming uncontrolled (changing from controlled to non-controlled)
+    const isBecomingControlled = !wasControlled && isNowControlled;
+    const isBecomingUncontrolled = wasControlled && !isNowControlled;
+    const isCurrentlyControlled = wasControlled;
+    
+    // Check if any field has changed
+    const hasChanges = (
+      editing.name !== originalComponent?.name ||
+      editing.category !== originalComponent?.category ||
+      editing.quantity !== originalComponent?.quantity ||
+      editing.remarks !== (originalComponent?.remarks || '') ||
+      isNowControlled !== wasControlled
+    );
+    
+    const passwordRequired = (
+      (isCurrentlyControlled && hasChanges) ||
+      isBecomingControlled ||
+      isBecomingUncontrolled
+    );
+    
+    if (passwordRequired) {
       setPendingSave({ editing, e });
       setShowPasswordModal(true);
       return;

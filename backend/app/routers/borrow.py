@@ -3,12 +3,13 @@ from sqlalchemy.orm import Session
 from datetime import date
 
 from app.database.db import get_db
-from app.database.models import BorrowTransaction, BorrowItem, Borrower, Component, BorrowStatus
+from app.database.models import BorrowTransaction, BorrowItem, Borrower, Component, BorrowStatus, Admin
 from app.schemas.borrow import BorrowCreate, BorrowTransactionRead
 from app.utils.user_resolver import resolve_user
 from app.utils.borrow_mapper import borrow_transaction_to_read
 from app.services.email_service import email_service
 from app.utils.admin_emails import get_admin_email_list
+from app.core.security import verify_password, DEFAULT_ADMIN_PASSWORD
 
 router = APIRouter(prefix="/borrow", tags=["Borrow"])
 
@@ -39,6 +40,8 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(tx)
 
+    # Check if any component is controlled and verify password if needed
+    controlled_components = []
     for item in data.items:
         component = db.query(Component).filter(
             Component.id == item.component_id,
@@ -48,12 +51,37 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
         if not component:
             raise HTTPException(400, "Invalid component")
         
-        # Check if component is controlled
         if component.is_controlled:
+            controlled_components.append(component.name)
+    
+    # If controlled items exist, verify admin password
+    if controlled_components:
+        if not data.admin_password:
             raise HTTPException(
                 400,
-                f"Component '{component.name}' is controlled and cannot be borrowed"
+                f"Admin password is required to borrow controlled items: {', '.join(controlled_components)}"
             )
+        
+        # Verify password
+        admin = db.query(Admin).first()
+        if admin is None:
+            # No admin record exists, use default password
+            if data.admin_password != DEFAULT_ADMIN_PASSWORD:
+                raise HTTPException(400, "Invalid admin password")
+        else:
+            # Verify password
+            is_valid = verify_password(data.admin_password, admin.password_hash)
+            if not is_valid:
+                raise HTTPException(400, "Invalid admin password")
+
+    for item in data.items:
+        component = db.query(Component).filter(
+            Component.id == item.component_id,
+            Component.is_deleted == False
+        ).first()
+
+        if not component:
+            raise HTTPException(400, "Invalid component")
         
         # Calculate available quantity: total - borrowed
         borrowed_qty = sum(
@@ -94,7 +122,8 @@ def create_borrow(data: BorrowCreate, db: Session = Depends(get_db)):
                 email_items.append({
                     'component_name': item.component.name,
                     'category': item.component.category,
-                    'quantity': item.quantity_borrowed
+                    'quantity': item.quantity_borrowed,
+                    'is_controlled': item.component.is_controlled
                 })
         
         if borrower.email and email_items:
