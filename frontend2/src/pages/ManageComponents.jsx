@@ -105,6 +105,15 @@ export default function ManageComponents() {
       editing.category !== originalComponent?.category ||
       editing.quantity !== originalComponent?.quantity ||
       editing.remarks !== (originalComponent?.remarks || '') ||
+      // include any location/storage changes so we prompt for password when needed
+      editing.storage_type !== originalComponent?.storage_type ||
+      editing.cabinet_number !== originalComponent?.cabinet_number ||
+      editing.shelf_number !== originalComponent?.shelf_number ||
+      (editing.container_id || null) !== (originalComponent?.container_id || null) ||
+      editing.drawer_index !== originalComponent?.drawer_index ||
+      editing.storage_box_index !== originalComponent?.storage_box_index ||
+      editing.location_type !== originalComponent?.location_type ||
+      (editing.location_index || null) !== (originalComponent?.location_index || null) ||
       isNowControlled !== wasControlled
     );
     
@@ -153,7 +162,8 @@ export default function ManageComponents() {
         storage_type: editing.storage_type,
         cabinet_number: editing.cabinet_number,
         shelf_number: editing.shelf_number,
-        container_id: editing.container_id || undefined,
+        // Use 0 to signal clearing container_id when user removes container
+        container_id: editing.container_id === null ? 0 : editing.container_id,
         drawer_index: editing.drawer_index,
         storage_box_index: editing.storage_box_index,
         location_type: editing.location_type,
@@ -281,7 +291,12 @@ export default function ManageComponents() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(c => (
-            <ComponentCard key={c.id} component={c} onDelete={handleDelete} onModify={handleModify} onView={() => window.location.href = `/containers/${c.container.code}`} />
+            <ComponentCard
+              key={c.id}
+              component={c}
+              onDelete={handleDelete}
+              onModify={handleModify}
+            />
           ))}
         </div>
 

@@ -318,6 +318,9 @@ def update_component(
 
     db: Session = Depends(get_db),
 ):
+    # Normalize sentinel values (0) to None for optional foreign keys
+    if container_id == 0:
+        container_id = None
     # -------------------------------------------------
     # Fetch existing component (NO CREATION)
     # -------------------------------------------------

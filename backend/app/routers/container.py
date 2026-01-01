@@ -73,8 +73,14 @@ def get_container(container_code: str, db: Session = Depends(get_db)):
 # --------------------------------------------------
 # COMPONENTS IN CONTAINER
 # --------------------------------------------------
-@router.get("/{container_code}/components", response_model=list[ComponentRead])
-def get_components_in_container(container_code: str, db: Session = Depends(get_db)):
+@router.get("/{container_code}/components", response_model=dict)
+def get_components_in_container(
+    container_code: str,
+    box: int | None = None,
+    partition: int | None = None,
+    db: Session = Depends(get_db)
+):
+    """Get components in container, with optional box/partition selection for deep linking"""
     container = db.query(Container).filter(Container.code == container_code).first()
     if not container:
         raise HTTPException(404, "Container not found")
@@ -88,7 +94,14 @@ def get_components_in_container(container_code: str, db: Session = Depends(get_d
         .all()
     )
 
-    return [component_to_read(c) for c in components]
+    components_read = [component_to_read(c) for c in components]
+    
+    return {
+        "components": components_read,
+        "container_code": container_code,
+        "selected_box": box,
+        "selected_partition": partition
+    }
 
 # ---------------------------------------------------
 # REGENERATE QR

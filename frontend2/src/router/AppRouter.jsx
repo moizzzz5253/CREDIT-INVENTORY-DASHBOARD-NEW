@@ -12,6 +12,14 @@ import SystemManager from "../pages/SystemManager";
 import AccountSettings from "../pages/AccountSettings";
 import DashboardLayout from "../layouts/DashboardLayout";
 import ProtectedRoute from "../components/ProtectedRoute";
+import Locations from "../pages/Locations";
+import CabinetList from "../pages/locations/CabinetList";
+import CabinetDetail from "../pages/locations/CabinetDetail";
+import ShelfView from "../pages/locations/ShelfView";
+import DrawerList from "../pages/locations/DrawerList";
+import DrawerDetail from "../pages/locations/DrawerDetail";
+import StorageBoxList from "../pages/locations/StorageBoxList";
+import StorageBoxDetail from "../pages/locations/StorageBoxDetail";
 
 export default function AppRouter() {
   // #region agent log
@@ -46,6 +54,15 @@ export default function AppRouter() {
           }
         />
         <Route path="/account-settings" element={<AccountSettings />} />
+        <Route path="/locations" element={<Locations />} />
+        <Route path="/locations/cabinet" element={<CabinetList />} />
+        <Route path="/locations/cabinet/:cabinetNumber" element={<CabinetDetail />} />
+        <Route path="/locations/cabinet/:cabinetNumber/shelf/:shelfNumber" element={<ShelfView />} />
+        <Route path="/locations/cabinet/:cabinetNumber/shelf/:shelfNumber/container/:code" element={<ContainerDetail />} />
+        <Route path="/locations/drawer" element={<DrawerList />} />
+        <Route path="/locations/drawer/:drawerIndex" element={<DrawerDetail />} />
+        <Route path="/locations/storage-box" element={<StorageBoxList />} />
+        <Route path="/locations/storage-box/:boxIndex" element={<StorageBoxDetail />} />
       </Routes>
     </DashboardLayout>
    </BrowserRouter>

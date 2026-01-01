@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { getComponentsInContainer } from "../api/containers.api";
+import ComponentImage from "../components/ComponentImage";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export default function ContainerDetail() {
   const { code } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [components, setComponents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,10 +18,42 @@ export default function ContainerDetail() {
     loadComponents();
   }, [code]);
 
+  useEffect(() => {
+    // Handle deep linking from query params
+    const boxParam = searchParams.get("box");
+    const partitionParam = searchParams.get("partition");
+    if (boxParam) {
+      setSelectedBox(parseInt(boxParam));
+    } else if (partitionParam) {
+      const partitionIndex = parseInt(partitionParam);
+      setSelectedComponent(
+        components.find(
+          (c) =>
+            c.location?.type === "PARTITION" &&
+            c.location?.index === partitionIndex
+        ) || null
+      );
+      setSelectedBox(null);
+    }
+  }, [searchParams, components]);
+
   const loadComponents = async () => {
     try {
-      const data = await getComponentsInContainer(code);
+      const boxParam = searchParams.get("box");
+      const partitionParam = searchParams.get("partition");
+      const params = {};
+      if (boxParam) params.box = parseInt(boxParam);
+      if (partitionParam) params.partition = parseInt(partitionParam);
+      
+      const response = await getComponentsInContainer(code, params);
+      // Handle both old format (array) and new format (object with components)
+      const data = Array.isArray(response) ? response : (response.components || []);
       setComponents(data);
+      
+      // Auto-select box/partition if provided
+      if (boxParam) {
+        setSelectedBox(parseInt(boxParam));
+      }
     } catch (error) {
       console.error("Failed to load components:", error);
     } finally {
@@ -67,11 +101,11 @@ export default function ContainerDetail() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 px-2 sm:px-0">
         {/* Back button */}
         <button
           onClick={() => navigate("/containers")}
-          className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white"
+          className="px-3 sm:px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white text-sm sm:text-base w-full sm:w-auto"
         >
           ← Back to Containers
         </button>
@@ -79,8 +113,8 @@ export default function ContainerDetail() {
         {/* Direct Components */}
         {directComponents.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold mb-3">Components in Container</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">Components in Container</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {directComponents.map(comp => (
                 <ComponentCard key={comp.id} component={comp} />
               ))}
@@ -91,11 +125,23 @@ export default function ContainerDetail() {
         {/* Boxes Dropdown */}
         {boxIndices.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold mb-3">Boxes</h3>
+            <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">Boxes</h3>
             <select
               value={selectedBox || ""}
-              onChange={(e) => setSelectedBox(e.target.value ? parseInt(e.target.value) : null)}
-              className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white mb-4"
+              onChange={(e) => {
+                const boxIdx = e.target.value ? parseInt(e.target.value) : null;
+                setSelectedBox(boxIdx);
+                // Update URL with box param
+                const newSearchParams = new URLSearchParams(searchParams);
+                if (boxIdx) {
+                  newSearchParams.set("box", boxIdx.toString());
+                  newSearchParams.delete("partition");
+                } else {
+                  newSearchParams.delete("box");
+                }
+                navigate(`${window.location.pathname}?${newSearchParams.toString()}`, { replace: true });
+              }}
+              className="w-full sm:w-auto px-3 py-2 bg-zinc-800 border border-zinc-700 rounded text-white mb-3 sm:mb-4 text-sm sm:text-base"
             >
               <option value="">Select a box...</option>
               {boxIndices.map(index => (
@@ -104,7 +150,7 @@ export default function ContainerDetail() {
             </select>
 
             {selectedBox !== null && boxComponents.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {boxComponents.map(comp => (
                   <ComponentCard key={comp.id} component={comp} />
                 ))}
@@ -116,20 +162,31 @@ export default function ContainerDetail() {
         {/* Partitions Grid */}
         {partitionComponents.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold mb-3">Partitions</h3>
-            <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
+            <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">Partitions</h3>
+            <div className="grid gap-1 sm:gap-2 overflow-x-auto" style={{ gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))` }}>
               {partitionGrid.map((row, rowIndex) =>
                 row.map((comp, colIndex) => {
                   const partitionIndex = rowIndex * gridSize + colIndex + 1;
                   return (
                     <div
                       key={`${rowIndex}-${colIndex}`}
-                      onClick={() => comp && setSelectedComponent(comp)}
-                      className={`aspect-square border border-zinc-600 rounded flex flex-col items-center justify-center p-0 bg-zinc-800 relative overflow-hidden ${
+                      onClick={() => {
+                        if (comp) {
+                          setSelectedComponent(comp);
+                          // Update URL with partition param
+                          const newSearchParams = new URLSearchParams(searchParams);
+                          newSearchParams.set("partition", partitionIndex.toString());
+                          newSearchParams.delete("box");
+                          navigate(`${window.location.pathname}?${newSearchParams.toString()}`, { replace: true });
+                        }
+                      }}
+                      className={`aspect-square border border-zinc-600 rounded flex flex-col items-center justify-center p-0 bg-zinc-800 relative overflow-hidden min-w-[40px] sm:min-w-0 ${
                         comp ? 'cursor-pointer hover:border-blue-500 hover:shadow-lg transition-all' : ''
+                      } ${
+                        comp && selectedComponent?.id === comp.id ? 'border-blue-500 ring-2 ring-blue-500' : ''
                       }`}
                     >
-                      <div className="absolute top-0.5 left-0.5 text-white text-xs font-bold bg-zinc-700 bg-opacity-80 px-1 rounded z-10">
+                      <div className="absolute top-0.5 left-0.5 text-white text-[10px] sm:text-xs font-bold bg-zinc-700 bg-opacity-80 px-0.5 sm:px-1 rounded z-10">
                         p{partitionIndex}
                       </div>
                       {comp ? (
@@ -156,7 +213,7 @@ export default function ContainerDetail() {
         )}
 
         {directComponents.length === 0 && boxIndices.length === 0 && partitionComponents.length === 0 && (
-          <div className="text-center text-zinc-400 py-8">
+          <div className="text-center text-zinc-400 py-8 text-sm sm:text-base">
             No components found in this container.
           </div>
         )}
@@ -193,13 +250,10 @@ function ComponentModal({ component, onClose }) {
         <div className="p-6">
           {/* Image */}
           <div className="flex justify-center mb-6">
-            <img
-              src={`${API_BASE}/${component.image_path}`}
+            <ComponentImage
+              imagePath={component.image_path}
               alt={component.name}
               className="max-w-full h-auto max-h-96 object-contain rounded-lg"
-              onError={(e) => {
-                e.currentTarget.src = "/placeholder.png";
-              }}
             />
           </div>
 
@@ -258,14 +312,11 @@ function ComponentCard({ component, compact = false }) {
       <div className="w-full h-full flex flex-col items-center justify-start p-0.5 box-border">
         {/* Image uses percentage of cell width so it scales with grid; increased to occupy more space */}
         <div className="w-full flex items-center justify-center" style={{ flex: '0 0 65%' }}>
-          <img
-            src={`${API_BASE}/${component.image_path}`}
+          <ComponentImage
+            imagePath={component.image_path}
             alt={component.name}
             style={{ width: '75%', height: '75%', objectFit: 'cover' }}
             className="rounded shrink-0"
-            onError={(e) => {
-              e.currentTarget.src = "/placeholder.png";
-            }}
           />
         </div>
 
@@ -288,13 +339,10 @@ function ComponentCard({ component, compact = false }) {
   return (
     <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
       <div className="flex items-center space-x-4">
-        <img
-          src={`${API_BASE}/${component.image_path}`}
+        <ComponentImage
+          imagePath={component.image_path}
           alt={component.name}
           className="w-16 h-16 object-cover rounded shrink-0"
-          onError={(e) => {
-            e.currentTarget.src = "/placeholder.png";
-          }}
         />
         <div className="flex-1 min-w-0">
           <h4 className="font-semibold text-white truncate text-lg">

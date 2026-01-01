@@ -15,6 +15,7 @@ from app.database.db import Base, engine
 from app.routers import (
     component,
     container,
+    location,
     borrow,
     returns,
     history,
@@ -84,6 +85,7 @@ app.add_middleware(
 # -----------------------------
 app.include_router(component.router)
 app.include_router(container.router)
+app.include_router(location.router)
 app.include_router(borrow.router)
 app.include_router(returns.router)
 app.include_router(history.router)

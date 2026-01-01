@@ -254,15 +254,18 @@ def validate_excel_import(
             if storage_type not in ["CABINET", "DRAWER", "STORAGE_BOX"]:
                 raise ValueError(f"Invalid storage_type: {storage_type}")
 
-            # Validate and resolve container_id based on storage_type
+            # Validate and resolve container_id based on storage_type (mutually exclusive modes)
             container_id = None
+
             if storage_type == "CABINET":
-                if cabinet_number is None:
-                    raise ValueError("cabinet_number is required for CABINET storage")
-                if shelf_number is None:
-                    raise ValueError("shelf_number is required for CABINET storage")
-                
+                # Drawer/storage-box fields must be empty
+                if drawer_index is not None:
+                    raise ValueError("drawer_index must be empty for CABINET storage")
+                if storage_box_index is not None:
+                    raise ValueError("storage_box_index must be empty for CABINET storage")
+
                 if container_code:
+                    # In-container: cabinet/shelf must align with container
                     container = (
                         db.query(Container)
                         .filter(Container.code == container_code)
@@ -270,24 +273,53 @@ def validate_excel_import(
                     )
                     if not container:
                         raise ValueError(f"Container {container_code} not found")
-                    if container.cabinet_number != cabinet_number:
+                    if cabinet_number is not None and container.cabinet_number != cabinet_number:
                         raise ValueError(f"Container {container_code} does not belong to cabinet {cabinet_number}")
+                    if cabinet_number is None:
+                        cabinet_number = container.cabinet_number
+                    if shelf_number is None:
+                        shelf_number = container.shelf_number
                     container_id = container.id
+                else:
+                    # Bare cabinet placement requires explicit cabinet/shelf
+                    if cabinet_number is None:
+                        raise ValueError("cabinet_number is required for CABINET storage without container")
+                    if shelf_number is None:
+                        raise ValueError("shelf_number is required for CABINET storage without container")
+                    if location_type != "NONE":
+                        raise ValueError("location_type must be NONE when no container is provided for CABINET storage")
+                    if location_index is not None:
+                        raise ValueError("location_index must be empty when location_type is NONE for CABINET storage")
+
             elif storage_type == "DRAWER":
                 if drawer_index is None:
                     raise ValueError("drawer_index is required for DRAWER storage")
+                if container_code:
+                    raise ValueError("container_code must be empty for DRAWER storage")
+                if storage_box_index is not None:
+                    raise ValueError("storage_box_index must be empty for DRAWER storage")
+                if cabinet_number is not None or shelf_number is not None:
+                    raise ValueError("cabinet_number/shelf_number must be empty for DRAWER storage")
+
             elif storage_type == "STORAGE_BOX":
                 if storage_box_index is None:
                     raise ValueError("storage_box_index is required for STORAGE_BOX storage")
+                if container_code:
+                    raise ValueError("container_code must be empty for STORAGE_BOX storage")
+                if drawer_index is not None:
+                    raise ValueError("drawer_index must be empty for STORAGE_BOX storage")
+                if cabinet_number is not None or shelf_number is not None:
+                    raise ValueError("cabinet_number/shelf_number must be empty for STORAGE_BOX storage")
+                if location_type != "NONE":
+                    raise ValueError("location_type must be NONE for STORAGE_BOX storage")
+                if location_index is not None:
+                    raise ValueError("location_index must be empty for STORAGE_BOX storage")
 
             if location_type not in ["NONE", "BOX", "PARTITION"]:
                 raise ValueError("Invalid location_type")
 
             if location_type != "NONE" and not location_index:
                 raise ValueError("location_index required when location_type is not NONE")
-
-            if storage_type == "STORAGE_BOX" and location_type != "NONE":
-                raise ValueError("STORAGE_BOX cannot have BOX or PARTITION location_type")
 
             # Extract is_controlled field
             is_controlled = False

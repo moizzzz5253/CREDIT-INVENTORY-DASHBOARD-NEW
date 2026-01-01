@@ -1,57 +1,86 @@
 Purpose
 -------
-This file gives concise, actionable guidance for AI coding agents working in this repository so they can be immediately productive.
+Concise guidance for AI agents to be immediately productive in this inventory management system.
 
 Quick Overview
 --------------
-- Backend: FastAPI app under `backend/app/` (entry: `backend/app/main.py`). Routers live in `backend/app/routers/`, Pydantic schemas in `backend/app/schemas/`, database in `backend/app/database/` (SQLite `inventory.db`).
-- Frontend: Vite + React in `frontend2/` (scripts in `frontend2/package.json`). The primary dev commands are `npm run dev` and `npm run build`.
+**Backend**: FastAPI app in `backend/app/` (entry: `main.py`). Routers in `routers/`, schemas in `schemas/`, SQLAlchemy models in `database/models.py`, business logic in `services/`.
+**Frontend**: React + Vite in `frontend2/` using Tailwind CSS, axios for API calls, react-router for navigation.
+**Deployment**: Docker Compose setup supports both local dev and containerized deployment with Cloudflare Tunnel support.
+**Database**: SQLite at `backend/data/inventory.db` (containerized) or `backend/app/database/inventory.db` (local dev).
 
-Run & Develop (exact commands)
+Development Commands
+--------------------
+- **Backend local**: `cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload --port 8000`
+- **Frontend local**: `cd frontend2 && npm install && npm run dev` (Vite dev server on `:5173`)
+- **Docker**: `docker-compose up --build` (runs both, backend on `:8000`, frontend on `:80`)
+- **Database**: Automatically created via SQLAlchemy `Base.metadata.create_all()` on app startup
+
+Architecture & Key Data Flow
 -----------------------------
-- Backend (development):
-  - From repository root: `cd backend` then `pip install -r requirements.txt` then `uvicorn app.main:app --reload --port 8000`
-  - Or from root (if Python path configured): `uvicorn backend.app.main:app --reload --port 8000`
-- Frontend (development):
-  - `cd frontend2 && npm install` then `npm run dev`
+1. **API Design**: Routers register in `main.py` via `include_router(...)`. Each domain has a router file (e.g., `borrow.py`, `component.py`, `container.py`, `location.py`, `reports.py`, `returns.py`, `history.py`).
+2. **Request → Response**: Frontend (axios) → FastAPI endpoint (router) → Service layer (business logic) → SQLAlchemy DB models → Response schema (Pydantic) → Frontend.
+3. **Database Relationships**: Admin/User → BorrowTransaction/ReturnEvent; Container → Component; Location (hierarchical: zone → cabinet → shelf → position).
+4. **Special Features**:
+   - **QR Codes**: Generated for containers/components via `qrcode` library, served at `/qr_codes/` (static mount), used in borrow workflow.
+   - **Email**: SMTP service with overdue reminder scheduler (runs in background via lifespan events, emails in Kuala Lumpur time).
+   - **Arduino Integration**: Optional serial communication for buzzer alerts (gracefully degrades if no Arduino/pyserial).
 
-Architecture & Patterns to Know
+File Organization
+-----------------
+```
+backend/app/
+  routers/        → One .py per feature area; each registers endpoints
+  services/       → Business logic (borrow_service, container_service, email_service, arduino_service, overdue_email_scheduler)
+  schemas/        → Pydantic models (requests/responses per domain, e.g., component.py, container.py, borrow.py)
+  database/
+    models.py     → SQLAlchemy ORM models (Admin, User, Container, Component, BorrowTransaction, ReturnEvent, Location, etc.)
+    db.py         → Engine, SessionLocal, Base, get_db() dependency
+  core/
+    config.py     → API_PORT, FRONTEND_PORT, get_base_url(), get_frontend_url() (network detection for QR codes)
+    network.py    → get_local_ip() helper (detects LAN IP for multi-device QR scanning)
+  utils/          → Mappers and validators (component_mapper.py, borrow_mapper.py, etc.)
+frontend2/src/
+  components/     → Reusable React components
+  pages/          → Page-level components (routes)
+  api/            → Axios API client with base config
+  layouts/        → Layout wrappers
+  router/         → React Router configuration
+```
+
+Conventions & Patterns
+---------------------
+- **New Endpoints**: Create function in `backend/app/routers/{domain}.py`, use Pydantic schema from `schemas/{domain}.py`, call service from `services/{domain}_service.py`. Register route in `main.py` if not already included.
+- **Database Access**: Always inject `db: Session = Depends(get_db)` in router functions. Access via `db.query(Model).filter(...)`. Services call `db` passed from router.
+- **Response Mapping**: Use mapper functions (e.g., `component_mapper.py`) to convert DB models to response schemas. Keeps API decoupled from DB.
+- **Async Patterns**: Routers are async, services are sync (database operations are sync-only with SQLAlchemy core). Background tasks use APScheduler (see `overdue_email_scheduler.py`).
+- **Environment**: Load from `.env` file (see `env.example`). Key vars: `API_PORT`, `FRONTEND_PORT`, `DATABASE_PATH` (Docker), `API_HOST`, `FRONTEND_URL`, email settings (`SMTP_SERVER`, `SMTP_PORT`, `SENDER_EMAIL`, `SENDER_PASSWORD`).
+
+Critical Implementation Details
 -------------------------------
-- Router-first API: `backend/app/main.py` imports and `include_router(...)` for each feature area (e.g. `component`, `container`, `borrow`). Modify or add endpoints by creating/updating modules in `backend/app/routers/`.
-- Separation of concerns:
-  - `schemas/` — Pydantic request/response models (used by routers).
-  - `services/` — business logic called by routers (e.g. `container_service.py`).
-  - `database/` — SQLAlchemy `engine`, `SessionLocal`, and `Base` definitions (`db.py`). Models live in `database/models.py`.
-  - `utils/` — mappers and small helpers (e.g., `borrow_mapper.py`, `component_mapper.py`).
-- DB behavior: on app import `Base.metadata.create_all(bind=engine)` (see `backend/app/main.py`), so the SQLite file (`inventory.db`) will be created automatically in development.
-- Static assets: `/qr_codes` is mounted via `app.mount("/qr_codes", ...)` (see `backend/app/main.py`), and uploads live in `backend/qr_codes/` and `backend/uploads/components/`.
-- Network/config: base URL logic uses `backend/app/core/config.py` which calls `get_local_ip()` in `backend/app/core/network.py` — be careful when hardcoding host addresses in examples.
-- CORS: currently `allow_origins=["*"]` in `main.py` — tighten before production.
+- **Database Path in Docker**: Set via `DATABASE_PATH=/app/data/inventory.db` env var (see `docker-compose.yml`), ensures persistence across restarts.
+- **Network Detection**: `config.py:get_base_url()` detects local IP for multi-device QR scanning. In containers, override via `API_HOST` env var.
+- **CORS**: Currently `allow_origins=["*"]` — tighten to `["http://localhost:3000", "http://frontend:80"]` for production.
+- **Static File Mounts**: `/qr_codes` and `/uploads` mounted in `main.py`; volumes in Docker map to `backend/qr_codes/` and `backend/uploads/components/`.
+- **Lifespan Events**: Background scheduler (email) and Arduino service start on app startup, stop on shutdown (see `lifespan` context manager in `main.py`).
 
-Conventions & small rules
--------------------------
-- Add new API endpoints in `backend/app/routers/` and register them in `main.py` (follow existing router patterns).
-- Use Pydantic models from `backend/app/schemas/` for request validation and responses.
-- Put DB access inside `services/` or explicitly use the `get_db()` dependency from `backend/app/database/db.py`.
-- Use mappers in `utils/` to convert DB models ↔ response schemas.
-- Frontend components follow `frontend2/src/` conventions; update imports relative to Vite aliasing or file paths.
+Adding Features (Examples)
+--------------------------
+- **New domain (e.g., "rental")**: Create `routers/rental.py`, `schemas/rental.py`, `services/rental_service.py`, add models to `database/models.py`, then `include_router(rental, prefix="/rentals")` in `main.py`.
+- **New endpoint in existing domain**: Add function to `routers/{domain}.py` with `@app.get/post/put/delete(...)` and Pydantic schema; service handles DB logic.
+- **Database migration**: Modify `database/models.py`, then either run `Base.metadata.create_all()` (dev) or use Alembic (production).
 
-Integration Points & External Dependencies
------------------------------------------
-- Backend: FastAPI, Uvicorn, SQLAlchemy, Alembic (migration tooling included in requirements), Pydantic. DB default is SQLite at `sqlite:///./inventory.db` (see `database/db.py`).
-- Frontend: Vite with `@vitejs/plugin-react` (see `frontend2/package.json`). API calls go to backend base URL — check `backend/app/core/config.py` for default port `8000`.
-
-When Editing or Adding Files — Examples
---------------------------------------
-- To add an endpoint for components: add route functions to `backend/app/routers/component.py`, use Pydantic models from `backend/app/schemas/component.py`, and call business logic from `backend/app/services/*`.
-- To change DB schema: update `backend/app/database/models.py` and prefer Alembic for migrations if the project adds migration scripts. For quick dev, the app will `create_all()` but production should use Alembic.
+Testing & Debugging
+-------------------
+- **Backend debug**: Run with `--reload` flag; use `logger` from `loguru` (logs go to console and file if configured).
+- **Frontend debug**: Vite dev server has HMR; check browser console for axios errors and network requests in DevTools.
+- **Arduino testing**: Run `python test_arduino.py` from backend root (test buzzer connectivity without full app).
+- **Docker logs**: `docker-compose logs -f backend` or `docker-compose logs -f frontend`.
 
 Notes for AI Agents
 -------------------
-- Always reference concrete files when proposing changes (example: `backend/app/routers/container.py`).
-- Prefer minimal, focused patches that follow existing module boundaries.
-- Avoid changing global CORS or DB defaults without explicit task context — call out required env changes instead.
-
-Feedback
---------
-If any repo-specific workflow is missing (CI, hosting, or special env setup), tell me which area to expand and provide any additional files (CI configs, deployment docs) to include.
+- Reference concrete files when proposing changes (e.g., `backend/app/routers/component.py`).
+- Preserve module boundaries; avoid mixing router, service, and schema logic.
+- Check `.env` and environment variables before hardcoding config; Docker and local dev may differ.
+- Email/Arduino features are optional; handle gracefully if SMTP config or pyserial are missing.
+- Frontend uses Tailwind CSS (no custom CSS framework); check `frontend2/package.json` for installed dependencies.

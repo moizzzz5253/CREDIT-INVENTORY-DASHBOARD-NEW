@@ -62,7 +62,8 @@ export const updateComponent = async (id, payload) => {
   if (payload.shelf_number !== undefined && payload.shelf_number !== null) {
     form.append("shelf_number", payload.shelf_number);
   }
-  if (payload.container_id !== undefined && payload.container_id !== null) {
+  // allow 0 to mean "clear container"
+  if (payload.container_id !== undefined) {
     form.append("container_id", payload.container_id);
   }
   if (payload.drawer_index !== undefined && payload.drawer_index !== null) {

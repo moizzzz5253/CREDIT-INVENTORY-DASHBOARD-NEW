@@ -16,7 +16,7 @@ export const regenerateQRCodes = async () => {
   return res.data;
 };
 
-export const getComponentsInContainer = async (containerCode) => {
-  const res = await api.get(`/containers/${containerCode}/components`);
+export const getComponentsInContainer = async (containerCode, params = {}) => {
+  const res = await api.get(`/containers/${containerCode}/components`, { params });
   return res.data;
 };

@@ -6,11 +6,13 @@ import {
   Cpu,
   ArrowLeftRight,
   History,
-  Settings
+  Settings,
+  MapPin
 } from "lucide-react";
 
 const menu = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { name: "Locations", path: "/locations", icon: MapPin },
   { name: "Containers", path: "/containers", icon: Box },
   { name: "Components", path: "/components", icon: Cpu },
   { name: "Borrow & Return", path: "/borrow/active", icon: ArrowLeftRight },
